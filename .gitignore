@@ -19,7 +19,6 @@ env/
 *.pem
 *.key
 *.crt
-mosquitto/config/passwd
 # Tokens GitHub (jamais committés)
 .github-token
 .github-token.txt

@@ -117,7 +117,7 @@ Le **champ « IP du PC-broker »** du formulaire gère les deux cas **sans chang
   |---|---|---|
   | Port | `1883` (clair) | `8883` **TLS** |
   | Auth | anonyme | **user + mot de passe MQTT** (`mqtt.connect(id, user, pwd)`) |
-  | Certif | — | **certificat CA** (déjà dans `mosquitto/certs/`) |
+  | Certif | — | **certificat CA** (déjà dans `docker/mosquitto/certs/`) |
 
   → passer en prod = `WiFiClientSecure` + `client.setCACert(...)` + `MQTT_PORT = 8883`. Le client Python de la Brique 3 est déjà TLS-ready en symétrie.
 
