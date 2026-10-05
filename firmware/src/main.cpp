@@ -22,7 +22,9 @@
 #include <time.h>
 
 // --- Broches ---
-const int PIN_DHT = 4;  // DHT22 sur GPIO 4
+const int PIN_DHT = 4;   // DHT22      sur GPIO 4  (température + humidité)
+const int PIN_PIR = 27;  // PIR HC-SR501 sur GPIO 27 (présence, sortie numérique)
+const int PIN_MQ2 = 34;  // MQ-2       sur GPIO 34 (gaz, entrée analogique ADC1)
 
 // --- Constantes réseau / MQTT ---
 const char* AP_NAME        = "SENTINEL-X-SETUP";  // réseau WiFi de configuration
@@ -46,6 +48,8 @@ char  brokerIp[40] = "";       // IP du PC-broker (saisie au portail, stockée e
 bool  saveBroker   = false;    // vrai si l'utilisateur vient de (re)configurer
 float temperature  = NAN;
 float humidite     = NAN;
+int   gaz          = 0;      // valeur brute ADC MQ-2 (0..4095) — voir README pour la calibration ppm
+bool  presence     = false;  // PIR : true = mouvement détecté
 unsigned long derniereLecture = 0;
 
 // ---------------------------------------------------------------------------
@@ -139,8 +143,8 @@ void publierMesure() {
   JsonDocument doc;
   doc["temp"]      = temperature;
   doc["humidity"]  = humidite;
-  doc["gas"]       = 0;    // TODO : capteur MQ-2 absent → placeholder (0) pour l'instant
-  doc["presence"]  = 0;    // TODO : capteur PIR  absent → placeholder (0) pour l'instant
+  doc["gas"]       = gaz;              // MQ-2 : valeur brute ADC (0..4095)
+  doc["presence"]  = presence ? 1 : 0; // PIR  : 1 = présence, 0 = rien
   doc["timestamp"] = horodatageISO();
 
   char payload[192];
@@ -157,24 +161,49 @@ void publierMesure() {
 void lireCapteurs() {
   temperature = dht.readTemperature();
   humidite    = dht.readHumidity();
+  gaz         = analogRead(PIN_MQ2);         // MQ-2 : valeur brute 0..4095 (12 bits)
+  presence    = digitalRead(PIN_PIR) == HIGH; // PIR : HIGH = mouvement
 }
 
 void afficherSerie() {
   if (isnan(temperature) || isnan(humidite))
-    Serial.println("DHT22 : lecture impossible (verifier cablage)");
+    Serial.printf("DHT22 : lecture KO | Gaz=%d  PIR=%d\n", gaz, presence);
   else
-    Serial.printf("T=%.1f C  H=%.1f %%\n", temperature, humidite);
+    Serial.printf("T=%.1f C  H=%.1f %%  Gaz=%d  PIR=%d\n",
+                  temperature, humidite, gaz, presence);
 }
 
 void afficherOLED() {
-  // Ligne d'état réseau : connecté au broker ou non
-  const char* etat = mqtt.connected() ? "MQTT: OK" : "MQTT: ...";
-  char lT[16], lH[16];
-  if (isnan(temperature)) snprintf(lT, sizeof(lT), "T: --");
-  else                    snprintf(lT, sizeof(lT), "T: %.1f C", temperature);
-  if (isnan(humidite))    snprintf(lH, sizeof(lH), "H: --");
-  else                    snprintf(lH, sizeof(lH), "H: %.1f %%", humidite);
-  oledLignes(lT, lH, etat);
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+
+  // En-tête : état WiFi (IP si connecté) + indicateur MQTT
+  display.setCursor(0, 0);
+  if (WiFi.status() == WL_CONNECTED) {
+    display.print(mqtt.connected() ? "MQTT " : "WiFi ");
+    display.println(WiFi.localIP());
+  } else {
+    display.println("WiFi : connexion...");
+  }
+  display.drawLine(0, 10, 127, 10, SSD1306_WHITE);
+
+  display.setCursor(0, 14);
+  if (isnan(temperature)) display.println("Temp : --");
+  else                    display.printf("Temp : %.1f C\n", temperature);
+
+  display.setCursor(0, 26);
+  if (isnan(humidite)) display.println("Humi : --");
+  else                 display.printf("Humi : %.1f %%\n", humidite);
+
+  display.setCursor(0, 38);
+  display.printf("Gaz  : %d\n", gaz);
+
+  display.setCursor(0, 50);
+  display.print("PIR  : ");
+  display.println(presence ? "PRESENCE !" : "rien");
+
+  display.display();
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +220,9 @@ void setup() {
   display.setTextColor(SSD1306_WHITE);
 
   dht.begin();
+  pinMode(PIN_PIR, INPUT);     // PIR : sortie numérique
+  analogReadResolution(12);    // MQ-2 : ADC 12 bits (0..4095)
+
   configurerWiFi();    // connexion WiFi (portail si 1ʳᵉ fois)
   configurerHeure();   // NTP pour l'horodatage ISO
   Serial.println("Sentinel-X : OLED + DHT22 + MQTT prets");
@@ -199,6 +231,14 @@ void setup() {
 void loop() {
   assurerMQTT();
   mqtt.loop();
+
+  // Détection PIR instantanée : rafraîchit l'OLED dès qu'un mouvement change
+  bool pirMaintenant = digitalRead(PIN_PIR) == HIGH;
+  if (pirMaintenant != presence) {
+    presence = pirMaintenant;
+    Serial.println(presence ? ">>> PRESENCE DETECTEE" : ">>> zone libre");
+    afficherOLED();
+  }
 
   if (millis() - derniereLecture >= PERIODE_MS) {
     derniereLecture = millis();
