@@ -1,0 +1,20 @@
+# ───────────────────────────────────────────────
+# SENTINEL-X — Broker MQTT Mosquitto (template)
+# À compléter en BRIQUE 2 (mardi). Responsable : W1 (Windows).
+# ───────────────────────────────────────────────
+version: "3.8"
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: sentinel-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"   # MQTT non chiffré (développement)
+      - "8883:8883"   # MQTTS chiffré (production — jeudi, certificats CYBER)
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    # TODO BRIQUE 2 : fournir mosquitto.conf (listener, persistence, auth)
+    # TODO BRIQUE CYBER : ajouter certificats TLS pour le listener 8883
