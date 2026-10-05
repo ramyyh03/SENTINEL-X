@@ -1,2 +1,62 @@
+# ───────────────────────────────────────────────
+# SENTINEL-X — .gitignore (Python + Node + macOS + Windows + Docker)
+# ───────────────────────────────────────────────
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# --- Secrets & config locale (JAMAIS en Git) ---
+.env
+.env.local
+*.pem
 *.key
+*.crt
 mosquitto/config/passwd
+# Tokens GitHub (jamais committés)
+.github-token
+.github-token.txt
+*-token.txt
+
+# --- Base de données (créée au runtime) ---
+sentinel.db
+*.sqlite
+*.sqlite3
+
+# --- Logs ---
+*.log
+logs/
+
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# --- Windows ---
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# --- Node / Front (Dashboard DEV) ---
+node_modules/
+dist/
+build/
+.npm/
+
+# --- Docker (volumes locaux) ---
+docker/data/
+docker/mosquitto/data/
+docker/mosquitto/log/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
