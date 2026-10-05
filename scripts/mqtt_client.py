@@ -75,7 +75,7 @@ def read_config() -> dict[str, Any]:
         "user": os.getenv("MQTT_USER") or None,
         "password": os.getenv("MQTT_PASSWORD") or None,
         "topic": os.getenv("MQTT_TOPIC", DEFAULT_TOPIC),
-        "ca_cert": os.getenv("MQTT_CA_CERT", str(PROJECT_ROOT / "mosquitto/certs/ca.crt")),
+        "ca_cert": os.getenv("MQTT_CA_CERT", str(PROJECT_ROOT / "docker/mosquitto/certs/ca.crt")),
     }
 
 

@@ -13,5 +13,5 @@ services:
     ports:
       - "1883:1883"   # MQTT en clair (développement local IA)
     volumes:
-      - ./mosquitto/config.dev:/mosquitto/config
+      - ./docker/mosquitto/config.dev:/mosquitto/config
     restart: unless-stopped
