@@ -19,6 +19,10 @@ env/
 *.pem
 *.key
 *.crt
+# Tokens GitHub (jamais committés)
+.github-token
+.github-token.txt
+*-token.txt
 
 # --- Base de données (créée au runtime) ---
 sentinel.db
