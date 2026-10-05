@@ -36,11 +36,13 @@ Ce document contient **les specs par rôle** (DEV, CYBER, IA/DATA) pour que **ch
 
 ## ▶️ Comment commencer
 
+**Prérequis** (à installer une fois) : **Git**, **Python 3.9+**, **Docker Desktop** (pour le broker MQTT). `make` est déjà présent sur macOS/Linux ; sous Windows voir la note plus bas.
+
 1. **Cloner** le repo et créer sa config locale :
    ```bash
    git clone https://github.com/ramyyh03/SENTINEL-X.git
-   cd SENTINEL-X/sentinel-x-ia
-   cp .env.example .env   # puis remplir les valeurs
+   cd SENTINEL-X          # le Makefile et le README sont ici
+   cp .env.example .env   # (optionnel en dev : valeurs par défaut = localhost:1883)
    ```
 
 2. **Tout installer + vérifier — en UNE seule commande :**
