@@ -29,6 +29,8 @@ mosquitto/config/passwd
 sentinel.db
 *.sqlite
 *.sqlite3
+data/*.db
+data/*.db-journal
 
 # --- Logs ---
 *.log

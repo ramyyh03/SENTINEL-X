@@ -1,13 +1,14 @@
 """BRIQUE 3 — Client MQTT SENTINEL-X.
 
 S'abonne au topic des capteurs, reçoit les mesures (DHT22, MQ-2, PIR)
-publiées par l'ESP8266 (ou le simulateur), les valide et les affiche.
+publiées par l'ESP32 (ou le simulateur), les valide, les affiche ET les
+persiste en SQLite via le collector.
 
 Usage :
     python scripts/mqtt_client.py
 
 Config via .env (voir .env.example). Testable SANS matériel grâce au
-simulateur : simulate/fake_sensors.py.
+simulateur : simulate/fake_sensors_esp32.py.
 """
 from __future__ import annotations
 
@@ -21,6 +22,13 @@ from typing import Any
 import paho.mqtt.client as mqtt
 from colorama import Fore, Style, init as colorama_init
 from dotenv import load_dotenv
+
+# .env à la racine + accès au package predictive/ (racine sur le sys.path)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from predictive.collector import SQLiteCollector  # noqa: E402 (après ajustement sys.path)
 
 # --- Constantes (pas de valeurs magiques dispersées) ---
 DEFAULT_HOST = "localhost"
@@ -40,7 +48,7 @@ EXPECTED_FIELDS = {
 }
 
 # .env à la racine du projet (parent du dossier scripts/)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = _PROJECT_ROOT
 load_dotenv(PROJECT_ROOT / ".env")
 colorama_init(autoreset=True)
 
@@ -131,12 +139,28 @@ def on_message(client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage) -> Non
         f"Message reçu : {data['temp']}°C | {data['humidity']}% | "
         f"gaz {data['gas']}ppm | {presence} | {data['timestamp']}")
 
+    # Persistance SQLite (source de vérité pour la Brique 6 / prédictif)
+    collector = userdata["collector"]
+    row_id = collector.insert_reading(data)
+    if row_id is not None:
+        log("DB", Fore.BLUE, f"Données stockées en SQLite (id={row_id})")
+
 
 def main() -> int:
     """Point d'entrée : configure, connecte et boucle (reconnexion incluse)."""
     config = read_config()
+
+    # Initialiser SQLite AVANT le broker : la base doit exister même si le
+    # broker est éteint (sinon on perdrait des mesures à la reconnexion).
+    try:
+        collector = SQLiteCollector()
+        log("OK", Fore.GREEN, f"SQLite prêt : {collector.db_path}")
+    except Exception as exc:  # init DB impossible = problème bloquant
+        log("ERREUR", Fore.RED, f"Initialisation SQLite échouée : {exc}")
+        return 1
+
     client = make_client()
-    client.user_data_set({"topic": config["topic"]})
+    client.user_data_set({"topic": config["topic"], "collector": collector})
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
     client.on_message = on_message
