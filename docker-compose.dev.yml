@@ -1,0 +1,17 @@
+# ───────────────────────────────────────────────
+# SENTINEL-X — Broker MQTT de DÉVELOPPEMENT (local, non chiffré)
+# Usage : docker compose -f docker-compose.dev.yml up -d
+#
+# ⚠️ DEV UNIQUEMENT : écoute 1883 en clair, accès anonyme.
+# La config PRODUCTION sécurisée (TLS 8883 + auth) reste dans
+# docker-compose.yml (racine) — ne pas confondre.
+# ───────────────────────────────────────────────
+services:
+  mosquitto-dev:
+    image: eclipse-mosquitto:2
+    container_name: sentinel-mosquitto-dev
+    ports:
+      - "1883:1883"   # MQTT en clair (développement local IA)
+    volumes:
+      - ./mosquitto/config.dev:/mosquitto/config
+    restart: unless-stopped
