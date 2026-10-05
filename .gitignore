@@ -72,3 +72,4 @@ secrets.h
 .vscode/
 .idea/
 *.swp
+docker/mosquitto/config/passwd

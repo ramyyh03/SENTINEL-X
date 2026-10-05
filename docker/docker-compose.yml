@@ -1,0 +1,17 @@
+# ───────────────────────────────────────────────
+# SENTINEL-X — Broker MQTT Mosquitto
+# ───────────────────────────────────────────────
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: sentinel-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"   # MQTT non chiffré (développement)
+      - "8883:8883"   # MQTTS chiffré (production — certificats CYBER)
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/certs:/mosquitto/certs
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
