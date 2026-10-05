@@ -38,12 +38,32 @@ Ce document contient **les specs par rôle** (DEV, CYBER, IA/DATA) pour que **ch
 
 1. **Cloner** le repo et créer sa config locale :
    ```bash
-   git clone https://github.com/<username>/sentinel-x-ia.git
-   cd sentinel-x-ia
+   git clone https://github.com/ramyyh03/SENTINEL-X.git
+   cd SENTINEL-X/sentinel-x-ia
    cp .env.example .env   # puis remplir les valeurs
    ```
-2. **Lire** sa section dans `BRIQUES/BRIQUE0-Architecture-GitHub.md`.
-3. **Lundi matin :** une fois la Brique 0 validée avec les coachs → **Brique 1 (Setup Python)**.
+
+2. **Tout installer + vérifier — en UNE seule commande :**
+   ```bash
+   make install
+   ```
+   > Crée le venv, installe `requirements.txt`, puis vérifie que **toutes** les dépendances sont bien là. Si une manque, la commande le dit.
+
+3. **Lire** sa section dans `BRIQUES/BRIQUE0-Architecture-GitHub.md`.
+
+### 🧰 Les autres commandes (`make help`)
+
+| Commande | Rôle |
+|---|---|
+| `make install` | ⭐ Installe tout (venv + deps) **et** vérifie l'environnement |
+| `make check` | Vérifie les dépendances **sans rien installer** |
+| `make demo` | 🚀 Démo complète **sans matériel** (broker + simulateur + SQLite) |
+| `make broker` / `make broker-stop` | Démarre / arrête le broker MQTT local |
+| `make run` | Lance l'abonné MQTT (reçoit les capteurs → SQLite) |
+| `make simulate` | Lance le simulateur ESP32 (10 mesures) |
+| `make help` | Liste toutes les commandes |
+
+> 🪟 **Windows (sans `make`)** : lancer à la place `bash scripts/setup-venv.sh` (Git Bash) ou, en PowerShell, `python -m venv venv ; venv\Scripts\pip install -r requirements.txt ; venv\Scripts\python scripts\check_env.py`.
 
 ---
 
