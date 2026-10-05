@@ -60,3 +60,4 @@ docker/mosquitto/log/
 .vscode/
 .idea/
 *.swp
+docker/mosquitto/config/passwd
