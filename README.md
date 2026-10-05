@@ -36,27 +36,35 @@ Ce document contient **les specs par rôle** (DEV, CYBER, IA/DATA) pour que **ch
 
 ## ▶️ Comment commencer
 
-**Prérequis** (à installer une fois) : **Git**, **Python 3.9+**, **Docker Desktop** (pour le broker MQTT). `make` est déjà présent sur macOS/Linux ; sous Windows voir la note plus bas.
+### 🚀 Machine toute neuve → UNE seule commande
 
-1. **Cloner** le repo et créer sa config locale :
-   ```bash
-   git clone https://github.com/ramyyh03/SENTINEL-X.git
-   cd SENTINEL-X          # le Makefile et le README sont ici
-   cp .env.example .env   # (optionnel en dev : valeurs par défaut = localhost:1883)
-   ```
+Tu n'as **rien** d'installé (ni Python, ni Docker) ? Après avoir cloné, lance :
 
-2. **Tout installer + vérifier — en UNE seule commande :**
-   ```bash
-   make install
-   ```
-   > Crée le venv, installe `requirements.txt`, puis vérifie que **toutes** les dépendances sont bien là. Si une manque, la commande le dit.
+```bash
+git clone https://github.com/ramyyh03/SENTINEL-X.git
+cd SENTINEL-X
+bash scripts/bootstrap.sh
+```
 
-3. **Lire** sa section dans `BRIQUES/BRIQUE0-Architecture-GitHub.md`.
+> Cette commande **installe les prérequis système** (Git, Python, Docker, make — ce qui manque, via Homebrew sur macOS / apt sur Linux), **PUIS** crée le venv, installe les dépendances et **vérifie que tout est bon**. Un seul passage.
+> ⚠️ macOS : après coup, **ouvre Docker Desktop une fois** pour finaliser son installation.
+
+### ⚡ Tu as déjà Python + Docker ?
+
+```bash
+git clone https://github.com/ramyyh03/SENTINEL-X.git
+cd SENTINEL-X
+cp .env.example .env   # (optionnel en dev : valeurs par défaut = localhost:1883)
+make install           # venv + dépendances + vérification
+```
+
+Ensuite, **lis ta section** dans `BRIQUES/BRIQUE0-Architecture-GitHub.md`.
 
 ### 🧰 Les autres commandes (`make help`)
 
 | Commande | Rôle |
 |---|---|
+| `bash scripts/bootstrap.sh` (ou `make bootstrap`) | 🧰 **Machine neuve** : prérequis système (Python/Docker…) **+** tout le reste |
 | `make install` | ⭐ Installe tout (venv + deps) **et** vérifie l'environnement |
 | `make check` | Vérifie les dépendances **sans rien installer** |
 | `make demo` | 🚀 Démo complète **sans matériel** (broker + simulateur + SQLite) |

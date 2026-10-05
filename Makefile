@@ -10,7 +10,10 @@ PIP  := $(VENV)/bin/pip
 DC   := docker compose -f docker-compose.dev.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help install check broker broker-stop run simulate demo
+.PHONY: help bootstrap install check broker broker-stop run simulate demo
+
+bootstrap: ## 🧰 Machine neuve : installe les prérequis SYSTÈME (Python, Docker…) PUIS install
+	@bash scripts/bootstrap.sh
 
 help: ## Affiche cette aide
 	@echo "🛡️  SENTINEL-X — commandes disponibles :"
