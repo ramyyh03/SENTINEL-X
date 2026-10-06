@@ -5,9 +5,17 @@
 # ═══════════════════════════════════════════════════════════════
 
 VENV := venv
-PY   := $(VENV)/bin/python
-PIP  := $(VENV)/bin/pip
-DC   := docker compose -f docker-compose.dev.yml
+# Chemins adaptés à l'OS : Windows = venv/Scripts (lancer depuis Git Bash),
+# Unix (macOS/Linux) = venv/bin. OS=Windows_NT est défini par make sous Windows.
+ifeq ($(OS),Windows_NT)
+  PYTHON := python
+  PY     := $(VENV)/Scripts/python
+else
+  PYTHON := python3
+  PY     := $(VENV)/bin/python
+endif
+PIP := $(PY) -m pip
+DC  := docker compose -f docker-compose.dev.yml
 
 .DEFAULT_GOAL := help
 .PHONY: help bootstrap install check test test-full broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
@@ -26,12 +34,12 @@ help: ## Affiche cette aide
 install: ## ⭐ Setup complet : Python, venv, deps, Docker, dossiers, .env
 	@echo "🛡️  SENTINEL-X — Installation"
 	@# 1. Python 3.8+ obligatoire
-	@command -v python3 >/dev/null 2>&1 || { echo "❌ Python3 introuvable — installe Python 3.8+"; exit 1; }
-	@python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,8) else 1)" \
-		|| { echo "❌ Python 3.8+ requis (détecté : $$(python3 -V))"; exit 1; }
-	@echo "✅ $$(python3 -V)"
+	@command -v $(PYTHON) >/dev/null 2>&1 || { echo "❌ $(PYTHON) introuvable — installe Python 3.8+"; exit 1; }
+	@$(PYTHON) -c "import sys; sys.exit(0 if sys.version_info >= (3,8) else 1)" \
+		|| { echo "❌ Python 3.8+ requis (détecté : $$($(PYTHON) -V))"; exit 1; }
+	@echo "✅ $$($(PYTHON) -V)"
 	@# 2. venv
-	@test -d $(VENV) || { echo "📦 Création du virtualenv…"; python3 -m venv $(VENV); }
+	@test -d $(VENV) || { echo "📦 Création du virtualenv…"; $(PYTHON) -m venv $(VENV); }
 	@# 3. dépendances
 	@echo "📥 pip + dépendances (requirements.txt)…"
 	@$(PIP) install --quiet --upgrade pip
