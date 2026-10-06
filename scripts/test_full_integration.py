@@ -317,6 +317,77 @@ def phase_e2e(ctx: Contexte) -> tuple[str, str]:
 
 
 # --------------------------------------------------------------------------- #
+#  Phases MATÉRIEL (webcam réelle + ESP32 réel) — SKIP si absent
+# --------------------------------------------------------------------------- #
+def phase_webcam(ctx: Contexte) -> tuple[str, str]:
+    """8. Webcam RÉELLE : détecte, capture une image et la passe à YOLOv8."""
+    import cv2
+
+    from vision.detector import FRAME_H, FRAME_W, VisionDetector, _backend_cv2
+
+    index = None
+    for i in range(6):  # cherche la 1re caméra lisible (UGREEN souvent index 1)
+        cap = cv2.VideoCapture(i, _backend_cv2())
+        lisible = cap.isOpened() and cap.read()[0]
+        cap.release()
+        if lisible:
+            index = i
+            break
+    if index is None:
+        return SKIP, "aucune webcam détectée (branchée ? permissions caméra Windows ?)"
+
+    cap = cv2.VideoCapture(index, _backend_cv2())
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_W)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_H)
+    for _ in range(5):          # warmup capteur
+        cap.read()
+    ok, frame = cap.read()
+    cap.release()
+    if not ok:
+        return FAIL, f"caméra {index} ouverte mais lecture impossible"
+
+    detections, latence = VisionDetector().detecter(frame)
+    return PASS, f"webcam index {index} OK — {len(detections)} personne(s), {latence:.0f} ms/frame"
+
+
+def phase_esp32(ctx: Contexte) -> tuple[str, str]:
+    """9. Capteur ESP32 RÉEL : écoute le broker (config .env) pour un vrai message."""
+    import os
+
+    host = os.getenv("MQTT_HOST", "localhost")
+    port = int(os.getenv("MQTT_PORT", "1883"))
+    user = os.getenv("MQTT_USER") or None
+    password = os.getenv("MQTT_PASSWORD") or None
+    ca = os.getenv("MQTT_CA_CERT", "")
+
+    recus: list = []
+    client = _make_client()
+    client.on_message = lambda *a: recus.append(a[-1])
+    try:
+        if port == 8883:  # broker prod chiffré (certs CYBER)
+            ca_path = PROJECT_ROOT / ca
+            if ca_path.exists():
+                client.tls_set(ca_certs=str(ca_path))
+            else:
+                return SKIP, "8883 TLS : certificat CA absent (voir security/gen-certs.sh)"
+        if user:
+            client.username_pw_set(user, password)
+        client.connect(host, port, 10)
+    except Exception as exc:
+        return SKIP, f"broker {host}:{port} injoignable ({exc.__class__.__name__}) — ESP32 non vérifiable"
+
+    client.subscribe(TOPIC)
+    client.loop_start()
+    time.sleep(10)          # on écoute 10 s un VRAI message (sans lancer le simulateur)
+    client.loop_stop()
+    client.disconnect()
+
+    if recus:
+        return PASS, f"message capteur réel reçu sur {host}:{port} ({len(recus)} en 10 s)"
+    return SKIP, "aucun message en 10 s (ESP32 flashé, connecté au WiFi et à CE broker ?)"
+
+
+# --------------------------------------------------------------------------- #
 #  Gestion de l'API (démarrage/arrêt par le script)
 # --------------------------------------------------------------------------- #
 def _assurer_api(ctx: Contexte) -> None:
@@ -395,6 +466,8 @@ def main() -> int:
         TestPhase("API Connectivity", phase_api),
         TestPhase("Dashboard Connectivity", phase_dashboard),
         TestPhase("E2E Full Chain", phase_e2e),
+        TestPhase("Webcam réelle (YOLO)", phase_webcam),
+        TestPhase("Capteur ESP32 (MQTT réel)", phase_esp32),
     ]
     print(f"{Style.BRIGHT}🛡️  SENTINEL-X — Test d'intégration complet…{Style.RESET_ALL}")
     try:
