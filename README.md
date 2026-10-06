@@ -73,7 +73,12 @@ Ensuite, **lis ta section** dans `BRIQUES/BRIQUE0-Architecture-GitHub.md`.
 | `make simulate` | Lance le simulateur ESP32 (10 mesures) |
 | `make help` | Liste toutes les commandes |
 
-> 🪟 **Windows (sans `make`)** : lancer à la place `bash scripts/setup-venv.sh` (Git Bash) ou, en PowerShell, `python -m venv venv ; venv\Scripts\pip install -r requirements.txt ; venv\Scripts\python scripts\check_env.py`.
+> 🪟 **Windows (`make` non reconnu)** : utilise le lanceur fourni **`make.bat`** — mêmes commandes :
+> ```bat
+> make.bat install        REM  (en PowerShell : .\make.bat install)
+> make.bat test-full
+> ```
+> `make.bat help` liste toutes les cibles. (Sans passer par lui : `venv\Scripts\python scripts\test_full_integration.py`.)
 
 ---
 
