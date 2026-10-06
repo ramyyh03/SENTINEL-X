@@ -40,7 +40,7 @@ install: ## ⭐ Setup complet : Python, venv, deps, Docker, dossiers, .env
 	@test -d $(VENV) || { echo "Creation du virtualenv..."; $(PYTHON) -m venv $(VENV); }
 	@echo "pip + dependances (requirements.txt)..."
 	@$(PIP) install --quiet --upgrade pip
-	@$(PIP) install --quiet -r requirements.txt
+	@$(PIP) install -r requirements.txt
 	@command -v docker >/dev/null 2>&1 && echo "[OK] Docker detecte" \
 		|| echo "[!] Docker absent - requis pour MQTT et make test-full"
 	@mkdir -p data logs models && echo "[OK] Dossiers data/ logs/ models/ prets"

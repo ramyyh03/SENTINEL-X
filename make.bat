@@ -33,7 +33,7 @@ for /f "delims=" %%v in ('python -V') do echo [OK] %%v
 if not exist venv ( echo Creation du venv... & python -m venv venv )
 echo Installation des dependances...
 %PY% -m pip install --upgrade pip -q
-%PY% -m pip install -r requirements.txt -q
+%PY% -m pip install -r requirements.txt
 where docker >nul 2>&1 && (echo [OK] Docker detecte) || (echo [!] Docker absent - requis pour MQTT et test-full)
 if not exist data   mkdir data
 if not exist logs   mkdir logs
