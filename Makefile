@@ -10,7 +10,7 @@ PIP  := $(VENV)/bin/pip
 DC   := docker compose -f docker-compose.dev.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap install check test broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show
+.PHONY: help bootstrap install check test broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
 
 bootstrap: ## 🧰 Machine neuve : installe les prérequis SYSTÈME (Python, Docker…) PUIS install
 	@bash scripts/bootstrap.sh
@@ -49,8 +49,22 @@ broker: ## Démarre le broker MQTT local (Mosquitto, port 1883)
 broker-stop: ## Arrête le broker MQTT local
 	@$(DC) down
 
-run: ## Lance l'abonné MQTT (reçoit les capteurs → SQLite)
+run: ## Lance le système : API (arrière-plan) + abonné MQTT (capteurs → SQLite)
+	@$(MAKE) --no-print-directory api
+	@echo "— Abonné MQTT (Ctrl+C pour arrêter ; l'API reste up → 'make api-stop') —"
 	@$(PY) scripts/mqtt_client.py
+
+api: ## 🌐 BRIQUE 7 : lance le serveur API (port 3000) en arrière-plan
+	@test -x $(PY) || { echo "❌ venv manquant — make install"; exit 1; }
+	@mkdir -p logs
+	@$(PY) -m api.server > logs/api.log 2>&1 & echo $$! > logs/api.pid
+	@echo "✅ API lancée (PID $$(cat logs/api.pid)) → http://localhost:3000/dashboard"
+
+api-stop: ## 🌐 BRIQUE 7 : arrête le serveur API
+	@kill `cat logs/api.pid 2>/dev/null` 2>/dev/null && rm -f logs/api.pid && echo "✅ API arrêtée" || echo "ℹ️ API non lancée"
+
+api-logs: ## 🌐 BRIQUE 7 : affiche les logs de l'API en continu
+	@tail -f logs/api.log
 
 simulate: ## Lance le simulateur ESP32 (10 mesures sur sentinel/sensors)
 	@$(PY) simulate/fake_sensors_esp32.py --simulate

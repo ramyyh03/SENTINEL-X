@@ -26,3 +26,6 @@ colorama>=0.4.6
 # --- Dev (optionnel) ---
 ipython>=8.15.0
 pytest>=7.4.0
+
+# --- API REST (Brique 7 : réception des alertes) ---
+flask>=3.0.0

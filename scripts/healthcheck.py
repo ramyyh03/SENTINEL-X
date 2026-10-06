@@ -121,6 +121,26 @@ def t_brique6_predictif() -> tuple[str, str]:
     return FAIL, f"rappel épisode trop bas ({rec:.2f})"
 
 
+def t_brique7_api() -> tuple[str, str]:
+    """BRIQUE 7 : l'API valide, stocke et expose /health (test in-process)."""
+    import tempfile
+
+    from api.alert_store import AlertStore
+    from api.server import create_app
+
+    with tempfile.TemporaryDirectory() as tmp:
+        app = create_app(AlertStore(db_path=str(Path(tmp) / "t.db")))
+        c = app.test_client()
+        ok = c.post("/api/v1/alerts", json={
+            "source": "ia_vision", "type": "intrusion_detected", "confidence": 0.9,
+            "timestamp": "2026-10-06T10:00:00Z", "details": {}})
+        bad = c.post("/api/v1/alerts", json={"source": "x"})  # invalide
+        health = c.get("/health")
+        if ok.status_code == 201 and bad.status_code == 400 and health.status_code == 200:
+            return OK, f"/alerts (201/400) + /health OK ({health.get_json()['status']})"
+        return FAIL, f"codes inattendus: {ok.status_code}/{bad.status_code}/{health.status_code}"
+
+
 def t_firmware() -> tuple[str, str]:
     """FIRMWARE : le code publie bien en MQTT au bon topic + capteurs présents."""
     cpp = (PROJECT_ROOT / "firmware/src/main.cpp").read_text(encoding="utf-8")
@@ -218,6 +238,7 @@ def main() -> int:
         ("Dépendances Python", t_dependances),
         ("Structure projet", t_structure),
         ("Brique 3 — SQLite", t_brique3_sqlite),
+        ("Brique 7 — API /health", t_brique7_api),
         ("Firmware ESP32", t_firmware),
         ("Sécurité (CYBER)", t_securite),
         ("Brique 6 — Prédictif", t_brique6_predictif),

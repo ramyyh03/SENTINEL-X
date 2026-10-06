@@ -49,9 +49,8 @@ ALERT_COOLDOWN_S = 5          # anti-spam : pas 2 alertes identiques en < 5 s
 CAMERA_INDEX = int(os.getenv("CAMERA_INDEX", "0"))
 
 API_URL = os.getenv("API_URL", "http://localhost:3000")
-API_ENDPOINT = os.getenv(
-    "API_ENDPOINT", f"{API_URL.rstrip('/')}/api/v1/alerts"
-)
+API_PATH = os.getenv("API_ALERTS_ENDPOINT", "/api/v1/alerts")
+API_ENDPOINT = os.getenv("API_ENDPOINT") or f"{API_URL.rstrip('/')}/{API_PATH.lstrip('/')}"
 
 
 def log(prefix: str, color: str, message: str) -> None:

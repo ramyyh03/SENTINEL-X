@@ -40,7 +40,11 @@ colorama_init(autoreset=True)
 LOGS_DIR = PROJECT_ROOT / "logs"
 DB_PATH = PROJECT_ROOT / os.getenv("DB_PATH", "data/sentinel.db")
 TRAINING_CSV = PROJECT_ROOT / "data" / "training_data.csv"
-API_ENDPOINT = os.getenv("API_ENDPOINT", os.getenv("API_URL", "http://localhost:3000/api/v1/alerts"))
+# Endpoint complet : soit API_ENDPOINT explicite, soit construit depuis
+# API_URL + API_ALERTS_ENDPOINT (robuste à un .env qui n'aurait que l'URL de base).
+_API_URL = os.getenv("API_URL", "http://localhost:3000")
+_API_PATH = os.getenv("API_ALERTS_ENDPOINT", "/api/v1/alerts")
+API_ENDPOINT = os.getenv("API_ENDPOINT") or f"{_API_URL.rstrip('/')}/{_API_PATH.lstrip('/')}"
 BUFFER_MAX = 120          # tampon des lectures récentes (pour les features)
 POLL_SECONDS = 2          # fréquence de scrutation de la base
 COLS = ["timestamp", "temp", "humidity", "gas", "presence"]
