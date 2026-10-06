@@ -24,6 +24,10 @@ env/
 .github-token.txt
 *-token.txt
 
+# --- Test matériel (sorties runtime par machine) ---
+data/captures/
+RAPPORT-MATERIEL.md
+
 # --- Base de données (créée au runtime) ---
 sentinel.db
 *.sqlite

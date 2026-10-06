@@ -13,6 +13,7 @@ if "%1"=="install"     goto install
 if "%1"=="check"       goto check
 if "%1"=="test"        goto test
 if "%1"=="test-full"   goto testfull
+if "%1"=="test-materiel" goto testmateriel
 if "%1"=="api"         goto api
 if "%1"=="train"       goto train
 if "%1"=="detect"      goto detect
@@ -55,6 +56,10 @@ goto end
 
 :testfull
 %PY% scripts\test_full_integration.py
+goto end
+
+:testmateriel
+%PY% scripts\test_materiel.py
 goto end
 
 :api
