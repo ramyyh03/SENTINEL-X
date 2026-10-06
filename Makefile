@@ -18,7 +18,7 @@ PIP := $(PY) -m pip
 DC  := docker compose -f docker-compose.dev.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap install check test test-full test-materiel check-materiel monitor-esp32 broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
+.PHONY: help bootstrap install check test test-full test-materiel check-materiel monitor-esp32 reset-db run-all broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
 
 bootstrap: ## 🧰 Machine neuve : installe les prérequis SYSTÈME (Python, Docker…) PUIS install
 	@bash scripts/bootstrap.sh
@@ -88,6 +88,19 @@ api-logs: ## 🌐 BRIQUE 7 : affiche les logs de l'API en continu
 
 simulate: ## Lance le simulateur ESP32 (10 mesures sur sentinel/sensors)
 	@$(PY) simulate/fake_sensors_esp32.py --simulate
+
+reset-db: ## 🧹 Vide la base (enlève les données synthétiques → que du réel ensuite)
+	@$(PY) scripts/reset_db.py
+
+run-all: ## 🚀 Lance tout en arrière-plan (broker + API + ingestion + détection)
+	@mkdir -p logs
+	@$(DC) up -d
+	@$(PY) -m api.server > logs/api.log 2>&1 & echo $$! > logs/api.pid
+	@$(PY) scripts/mqtt_client.py > logs/ingest.log 2>&1 & echo $$! > logs/ingest.pid
+	@$(PY) -m predictive.main_brique6 detect > logs/detect.log 2>&1 & echo $$! > logs/detect.pid
+	@echo "✅ Système lancé. Dashboard : http://localhost:3000/dashboard"
+	@echo "   Capteurs : /live · Caméra : /camera (lance la vision à part : make detect-vision)"
+	@echo "   Arrêt : make api-stop broker-stop ; kill via logs/*.pid"
 
 train: ## 🧠 BRIQUE 6 : génère les données + entraîne Forest/LOF + évalue
 	@test -x $(PY) || { echo "❌ Pas de venv — lance d'abord : make install"; exit 1; }

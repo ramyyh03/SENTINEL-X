@@ -16,6 +16,8 @@ if "%1"=="test-full"   goto testfull
 if "%1"=="test-materiel" goto testmateriel
 if "%1"=="check-materiel" goto checkmateriel
 if "%1"=="monitor-esp32" goto monitoresp32
+if "%1"=="reset-db"    goto resetdb
+if "%1"=="run-all"     goto runall
 if "%1"=="api"         goto api
 if "%1"=="train"       goto train
 if "%1"=="detect"      goto detect
@@ -70,6 +72,25 @@ goto end
 
 :monitoresp32
 %PY% scripts\esp32_monitor.py
+goto end
+
+:resetdb
+%PY% scripts\reset_db.py
+goto end
+
+:runall
+echo Lancement du systeme complet SENTINEL-X (plusieurs fenetres)...
+docker compose -f docker-compose.dev.yml up -d
+start "SENTINEL - API" cmd /k "%PY% -m api.server"
+start "SENTINEL - Ingestion MQTT" cmd /k "%PY% scripts\mqtt_client.py"
+start "SENTINEL - Detection" cmd /k "%PY% -m predictive.main_brique6 detect"
+start "SENTINEL - Vision webcam" cmd /k "%PY% -m vision.detector --camera 1"
+echo.
+echo   Dashboard alertes : http://localhost:3000/dashboard
+echo   Capteurs en direct: http://localhost:3000/live
+echo   Camera (vision)   : http://localhost:3000/camera
+echo.
+echo   (4 fenetres ouvertes ; ferme-les avec Ctrl+C pour tout arreter)
 goto end
 
 :api

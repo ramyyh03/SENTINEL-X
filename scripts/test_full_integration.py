@@ -215,13 +215,13 @@ def phase_mqtt(ctx: Contexte) -> tuple[str, str]:
 def phase_sqlite(ctx: Contexte) -> tuple[str, str]:
     """3. La table sensor_data existe et contient des données."""
     if not ctx.db.exists():
-        return FAIL, f"base absente: {ctx.db}"
+        return WARN, "base pas encore créée (démarre la Brique 3 / l'ESP32)"
     n = _compter_sensor_data(ctx)
     if n < 0:
-        return FAIL, "table sensor_data absente (lancer la Brique 3)"
+        return WARN, "table sensor_data pas encore créée (démarre l'ingestion MQTT)"
     if n == 0:
-        return WARN, "table présente mais vide (0 ligne)"
-    return PASS, f"sensor_data OK ({n} lignes)"
+        return WARN, "aucune mesure encore (ESP32/simulateur pas encore lancé)"
+    return PASS, f"sensor_data OK ({n} mesures)"
 
 
 def phase_detecteur(ctx: Contexte) -> tuple[str, str]:

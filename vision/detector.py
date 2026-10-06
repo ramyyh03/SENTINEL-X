@@ -42,6 +42,9 @@ MODEL_NAME = "yolov8n.pt"      # nano : léger + rapide (CPU / Apple Silicon)
 PERSON_CLASS_ID = 0            # classe "person" dans COCO
 CONF_THRESHOLD = 0.50         # on ne garde que les détections sûres à ≥ 50 %
 FRAME_W, FRAME_H = 640, 480   # résolution d'inférence
+# Dernière image annotée (lue par le dashboard pour afficher la caméra)
+LATEST_FRAME = PROJECT_ROOT / "data" / "captures" / "latest.jpg"
+LATEST_WRITE_INTERVAL = 0.3   # s : on n'écrit pas le JPG à chaque frame (throttle)
 MAX_LATENCY_MS = 100          # objectif : traiter une frame en < 100 ms
 ALERT_COOLDOWN_S = 5          # anti-spam : pas 2 alertes identiques en < 5 s
 # Index caméra : 0 = 1re caméra. Sur un PC avec webcam intégrée, la webcam USB
@@ -215,6 +218,7 @@ def run_detection(api_url: str | None = None, simulate: bool = False,
         f"Détection vision démarrée (seuil={detector.conf_threshold}, API={API_ENDPOINT}). Ctrl+C pour arrêter.")
 
     derniere_alerte = 0.0
+    derniere_ecriture = 0.0
     i = 0
     try:
         while True:
@@ -240,8 +244,15 @@ def run_detection(api_url: str | None = None, simulate: bool = False,
                         f"confiance max {alerte['confidence']} ({latence:.0f} ms)")
                     poster_alerte(alerte)
 
+            # Image annotée pour le dashboard (/camera) — écrite périodiquement
+            _dessiner_boites(frame, detections)
+            now = time.monotonic()
+            if now - derniere_ecriture >= LATEST_WRITE_INTERVAL:
+                derniere_ecriture = now
+                _ecrire_latest(frame)
+
             if show:
-                _afficher(frame, detections)
+                cv2.imshow("SENTINEL-X Vision", frame)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
 
@@ -260,8 +271,8 @@ def run_detection(api_url: str | None = None, simulate: bool = False,
     return 0
 
 
-def _afficher(frame: np.ndarray, detections: list[dict]) -> None:
-    """Dessine les boîtes et affiche la fenêtre (debug, --show)."""
+def _dessiner_boites(frame: np.ndarray, detections: list[dict]) -> np.ndarray:
+    """Dessine les boîtes « person » sur la frame (modifiée en place)."""
     for d in detections:
         x1, y1, x2, y2 = d["box"]
         p1 = (int(x1 * FRAME_W), int(y1 * FRAME_H))
@@ -269,7 +280,16 @@ def _afficher(frame: np.ndarray, detections: list[dict]) -> None:
         cv2.rectangle(frame, p1, p2, (0, 0, 255), 2)
         cv2.putText(frame, f"person {d['confidence']}", (p1[0], p1[1] - 6),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-    cv2.imshow("SENTINEL-X Vision", frame)
+    return frame
+
+
+def _ecrire_latest(frame: np.ndarray) -> None:
+    """Écrit la dernière image annotée pour le dashboard (/camera)."""
+    try:
+        LATEST_FRAME.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(LATEST_FRAME), frame)
+    except Exception:
+        pass  # l'affichage dashboard ne doit jamais casser la détection
 
 
 def main() -> int:

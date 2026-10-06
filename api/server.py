@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 
 from api.alert_store import AlertStore
 
@@ -163,7 +163,20 @@ def create_app(store: AlertStore | None = None) -> Flask:
     def live():
         return _page_live(_lire_capteurs(magasin.db_path, 20))
 
+    @app.get("/camera")
+    def camera():
+        return _page_camera()
+
+    @app.get("/camera/frame")
+    def camera_frame():
+        if LATEST_FRAME.exists():
+            return send_file(LATEST_FRAME, mimetype="image/jpeg")
+        return ("", 204)  # pas encore d'image (vision pas lancée)
+
     return app
+
+
+LATEST_FRAME = PROJECT_ROOT / "data" / "captures" / "latest.jpg"
 
 
 def _lire_capteurs(db_path, limit: int = 20) -> list[dict]:
@@ -219,7 +232,7 @@ def _page_dashboard(alertes: list[dict]) -> str:
 </style></head>
 <body>
   <h1>🛡️ SENTINEL-X — Dashboard des alertes</h1>
-  <div class="sub">{len(alertes)} dernière(s) alerte(s) · rafraîchi toutes les 5 s · {maj} · <a href="/live" style="color:#58a6ff;text-decoration:none">→ capteurs en direct</a></div>
+  <div class="sub">{len(alertes)} dernière(s) alerte(s) · rafraîchi toutes les 5 s · {maj} · <a href="/live" style="color:#58a6ff;text-decoration:none">→ capteurs</a> · <a href="/camera" style="color:#58a6ff;text-decoration:none">→ caméra</a></div>
   <table>
     <thead><tr><th>Timestamp</th><th>Source</th><th>Type</th><th>Confiance</th><th>Sévérité</th><th>Détails</th></tr></thead>
     <tbody>{lignes}</tbody>
@@ -278,8 +291,41 @@ def _page_live(mesures: list[dict]) -> str:
 </style></head>
 <body>
   <h1>🛡️ SENTINEL-X — Capteurs en direct</h1>
-  <div class="sub">Rafraîchi toutes les 3 s · {maj} · <a href="/dashboard">→ voir les alertes</a></div>
+  <div class="sub">Rafraîchi toutes les 3 s · {maj} · <a href="/dashboard">→ alertes</a> · <a href="/camera">→ caméra</a></div>
   {corps}
+</body></html>"""
+
+
+def _page_camera() -> str:
+    """Page caméra : affiche la dernière image annotée (YOLO), rafraîchie ~1 s."""
+    return """<!doctype html>
+<html lang="fr"><head>
+<meta charset="utf-8">
+<title>SENTINEL-X — Caméra</title>
+<style>
+  body { font-family: system-ui, sans-serif; background:#1b1f23; color:#e6e6e6; margin:0; padding:24px; text-align:center; }
+  h1 { font-size:20px; }
+  a { color:#58a6ff; text-decoration:none; }
+  img { max-width:min(640px,95vw); border:2px solid #30363d; border-radius:10px; margin-top:12px; background:#000; }
+  .sub { color:#8b949e; font-size:13px; }
+</style></head>
+<body>
+  <h1>🛡️ SENTINEL-X — Caméra (vision IA)</h1>
+  <div class="sub">Webcam externe + détection de personnes · <a href="/dashboard">alertes</a> · <a href="/live">capteurs</a></div>
+  <div><img id="cam" src="/camera/frame" alt="flux camera"></div>
+  <div class="sub" id="etat">Connexion au flux…</div>
+<script>
+  setInterval(function () {
+    document.getElementById('cam').src = '/camera/frame?t=' + Date.now();
+  }, 800);
+  document.getElementById('cam').onerror = function () {
+    document.getElementById('etat').textContent =
+      "Aucun flux : lance la vision (make.bat detect-vision --camera 1).";
+  };
+  document.getElementById('cam').onload = function () {
+    document.getElementById('etat').textContent = "Flux en direct";
+  };
+</script>
 </body></html>"""
 
 

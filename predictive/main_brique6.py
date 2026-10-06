@@ -92,16 +92,8 @@ def cmd_train() -> int:
     if os.getenv("ARIMA_ENABLED", "false").lower() == "true":
         log("ARIMA", Fore.CYAN, str(arima_trainer.entrainer()))
 
-    # Initialise data/sentinel.db si elle est vide, pour que la Brique 6/7 soit
-    # testable immédiatement (sans attendre des vraies données capteurs/MQTT).
-    from predictive.collector import SQLiteCollector
-    collector = SQLiteCollector()
-    if collector.count() == 0 and TRAINING_CSV.exists():
-        df = pd.read_csv(TRAINING_CSV)
-        recs = df[["timestamp", "temp", "humidity", "gas", "presence"]].to_dict("records")
-        n = collector.insert_many(recs)
-        log("DATA", Fore.CYAN, f"sentinel.db initialisée avec {n} lectures synthétiques")
-
+    # NB : on ne touche PAS à data/sentinel.db (réservée aux VRAIES mesures capteurs).
+    # L'entraînement se fait sur data/training_data.csv (synthétique), pas sur la base live.
     log("OK", Fore.GREEN, "Entraînement terminé → models/ + logs/training_metrics.json")
     return 0
 
