@@ -104,15 +104,21 @@ class VisionDetector:
 def construire_alerte(detections: list[dict]) -> dict:
     """Construit l'alerte JSON au format SENTINEL-X (immuable)."""
     confiances = [d["confidence"] for d in detections]
+    nb = len(detections)
+    # Sévérité : une présence = WARNING ; plusieurs personnes = CRITICAL.
+    # (La "confidence" YOLO mesure la certitude de détection, PAS la gravité.)
+    severite = "CRITICAL" if nb >= 2 else "WARNING"
     return {
         "source": "ia_vision",
         "type": "intrusion_detected",
         "confidence": max(confiances),
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "details": {
-            "persons_detected": len(detections),
+            "persons_detected": nb,
             "max_confidence": max(confiances),
             "bounding_boxes": [d["box"] for d in detections],
+            "severity": severite,
+            "context": f"{nb} personne(s) détectée(s) par la caméra",
         },
     }
 

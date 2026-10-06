@@ -199,7 +199,10 @@ def _page_dashboard(alertes: list[dict]) -> str:
         sev = _severite(a)
         couleur = _COULEURS.get(sev, "#7f8c8d")
         details = a.get("details") or {}
-        contexte = details.get("context") or details.get("persons_detected", "")
+        contexte = details.get("context")
+        if not contexte and details.get("persons_detected") is not None:
+            contexte = f"{details['persons_detected']} personne(s) détectée(s)"
+        contexte = contexte or ""
         lignes += (
             f"<tr>"
             f"<td>{a.get('timestamp', '')}</td>"
