@@ -14,7 +14,7 @@
 | **Gaz / fumée** | **MQ-2** sur GPIO **34** (entrée analogique ADC1) |
 | **Présence / mouvement** | **PIR HC-SR501** sur GPIO **27** (sortie numérique) |
 | Affichage | **Écran OLED SSD1306** 128×64 en I²C (SDA=21, SCL=22, adresse `0x3C`) |
-| Réseau | **WiFi** + **publication MQTT** sur le topic `sentinel/sensors` |
+| Réseau | **WiFi** + **publication MQTTS** (TLS, port 8883, authentifiée) sur le topic `sentinel/sensors` |
 | Config | **Portail web** (aucun identifiant dans le code) |
 | Cadence | 1 lecture + 1 publication / **2 s** (PIR rafraîchi en temps réel) |
 
@@ -83,16 +83,19 @@ Le module a **2 potentiomètres** + 1 cavalier :
 > Chacun fait ça **une seule fois** sur sa carte. Aucun identifiant n'est écrit dans le code ni poussé sur GitHub : tout reste dans la flash de l'ESP32.
 
 1. **Flasher** la carte : `cd firmware && pio run -t upload` (voir plus bas).
-2. Au 1er démarrage, l'ESP32 crée un réseau WiFi **`SENTINEL-X-SETUP`** (mot de passe `sentinel`). L'OLED l'affiche.
+2. Au 1er démarrage, l'ESP32 crée un réseau WiFi **`SENTINEL-X-SETUP`**. Son **mot de passe est aléatoire, propre à chaque carte**, et s'affiche sur l'**OLED** (et le port série).
 3. Depuis un **téléphone / PC**, se connecter à ce réseau → une **page web s'ouvre toute seule** (portail captif).
 4. **Remplir le formulaire** :
    - *SSID* + *mot de passe* de **ton** WiFi,
    - *IP du PC-broker* : l'adresse du PC qui fait tourner Mosquitto
-     (`ipconfig` sur Windows / `ifconfig | grep "inet "` sur Mac → genre `192.168.x.x`).
+     (`ipconfig` sur Windows / `ifconfig | grep "inet "` sur Mac → genre `192.168.x.x`),
+   - *Identifiant* + *mot de passe MQTT* : le compte du broker (à demander à la filière CYBER, jamais dans Git).
 5. Valider → l'ESP32 mémorise tout, se connecte et commence à publier. ✅
    Au prochain démarrage, **plus rien à ressaisir**.
 
 > 🔁 **Pour changer de réseau ou d'IP plus tard** : effacer la flash (`pio run -t erase`) puis re-flasher — le portail se rouvre.
+> 🔁 **Carte déjà configurée avec l'ancien firmware (sans compte MQTT)** : le portail se rouvre tout seul au démarrage tant que l'IP du broker, l'identifiant ou le mot de passe MQTT manquent. Il faut y ressaisir aussi le WiFi.
+> ⚠️ **Si l'IP du PC-broker change**, la filière CYBER doit régénérer le certificat serveur : `bash security/gen-certs.sh <nouvelle IP>` puis redémarrer le broker. Le firmware, lui, n'a pas à être recompilé.
 
 ---
 
@@ -109,17 +112,18 @@ Le **champ « IP du PC-broker »** du formulaire gère les deux cas **sans chang
 
 ## 🔒 Sécurité
 
-- **Aucun secret dans Git** : WiFi + IP broker vivent uniquement dans la flash de l'ESP32 (saisis au portail).
-- Le portail `SENTINEL-X-SETUP` est **protégé par mot de passe** (pas de reconfiguration par un inconnu).
-- **Roadmap durcissement (démo/prod)** — le code est prêt à basculer :
+- **Aucun secret dans Git** : WiFi, IP broker et compte MQTT vivent uniquement dans la flash de l'ESP32 (saisis au portail).
+- Le portail `SENTINEL-X-SETUP` est protégé par un **mot de passe aléatoire propre à chaque carte**, affiché sur l'OLED : il faut avoir la carte sous les yeux pour la reconfigurer.
+- **Liaison MQTT chiffrée et authentifiée** :
 
-  | Niveau | Dev (actuel) | Prod |
-  |---|---|---|
-  | Port | `1883` (clair) | `8883` **TLS** |
-  | Auth | anonyme | **user + mot de passe MQTT** (`mqtt.connect(id, user, pwd)`) |
-  | Certif | — | **certificat CA** (déjà dans `docker/mosquitto/certs/`) |
+  | Niveau | Valeur |
+  |---|---|
+  | Port | `8883` **TLS** (plus de port en clair dans le firmware) |
+  | Identité du broker | vérifiée avec le **certificat de la CA interne** (`include/ca_cert.h`, public) : signature **et** adresse du broker |
+  | Auth | **identifiant + mot de passe MQTT** saisis au portail |
 
-  → passer en prod = `WiFiClientSecure` + `client.setCACert(...)` + `MQTT_PORT = 8883`. Le client Python de la Brique 3 est déjà TLS-ready en symétrie.
+- ⚠️ Le firmware ne parle **plus** au broker de dev (`docker-compose.dev.yml`, port 1883). Avec la carte, lancer le broker sécurisé : `docker compose -f docker/docker-compose.yml up -d`. Le broker de dev reste utilisable avec le simulateur.
+- En cas d'échec, le port série affiche `MQTTS : echec (state=…)` : `-2` = connexion ou certificat refusé (mauvaise IP, certificat pas émis pour cette IP, pare-feu), `4`/`5` = identifiants MQTT refusés.
 
 ---
 
@@ -138,5 +142,5 @@ pio device monitor      # lit le port série (115200 bauds)
 
 ## ✅ Tester la chaîne complète (avec ou sans ESP32)
 
-- **Avec l'ESP32 flashé** : lancer le broker (`docker compose -f docker-compose.dev.yml up -d`) puis l'abonné (`python scripts/mqtt_client.py`). Les mesures de la carte arrivent dans `data/sentinel.db`.
+- **Avec l'ESP32 flashé** : lancer le broker sécurisé (`docker compose -f docker/docker-compose.yml up -d`), régler le `.env` sur le port `8883` avec le compte MQTT, puis lancer l'abonné (`python scripts/mqtt_client.py`). Les mesures de la carte arrivent dans `data/sentinel.db`.
 - **Sans matériel** : le simulateur `simulate/fake_sensors_esp32.py --simulate` joue l'ESP32 (même topic, même format JSON). La Brique 3 reste 100 % testable.
