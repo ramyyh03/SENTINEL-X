@@ -98,6 +98,25 @@ class SQLiteCollector:
             print(f"[DB][ERREUR] Échec insertion SQLite : {exc}")
             return None
 
+    def insert_many(self, readings: list[dict[str, Any]]) -> int:
+        """Insère plusieurs mesures en UNE connexion (initialisation/seed rapide).
+
+        Retourne le nombre de lignes insérées (0 en cas d'erreur).
+        """
+        rows = [{
+            "timestamp": d.get("timestamp"), "temp": d.get("temp"),
+            "humidity": d.get("humidity"), "gas": d.get("gas"),
+            "presence": d.get("presence"),
+        } for d in readings]
+        try:
+            with closing(self._connect()) as conn:
+                conn.executemany(INSERT_SQL, rows)
+                conn.commit()
+                return len(rows)
+        except sqlite3.Error as exc:
+            print(f"[DB][ERREUR] Insertion multiple échouée : {exc}")
+            return 0
+
     def count(self) -> int:
         """Nombre de lignes stockées (utile pour les tests/validation)."""
         with closing(self._connect()) as conn:
