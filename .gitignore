@@ -37,6 +37,8 @@ logs/
 
 # --- Modèles IA entraînés (binaires régénérables via `make train`) ---
 models/
+# Poids YOLO (téléchargés automatiquement par ultralytics)
+*.pt
 
 # --- macOS ---
 .DS_Store

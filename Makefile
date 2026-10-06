@@ -10,7 +10,7 @@ PIP  := $(VENV)/bin/pip
 DC   := docker compose -f docker-compose.dev.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap install check broker broker-stop run simulate demo train detect replay
+.PHONY: help bootstrap install check broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show
 
 bootstrap: ## 🧰 Machine neuve : installe les prérequis SYSTÈME (Python, Docker…) PUIS install
 	@bash scripts/bootstrap.sh
@@ -60,6 +60,15 @@ detect: ## 🔎 BRIQUE 6 : détection d'anomalies en temps réel sur data/sentin
 
 replay: ## 🔁 BRIQUE 6 : rejoue le dataset synthétique (test IA sans DB ni broker)
 	@$(PY) -m predictive.main_brique6 replay
+
+detect-vision: ## 👁️ BRIQUE 5 : détection de personnes (webcam réelle) → alertes
+	@$(PY) -m vision.detector
+
+detect-vision-sim: ## 👁️ BRIQUE 5 : détection en mode SIMULATION (sans webcam)
+	@$(PY) -m vision.detector --simulate
+
+detect-vision-show: ## 👁️ BRIQUE 5 : détection avec affichage OpenCV (debug)
+	@$(PY) -m vision.detector --show
 
 demo: ## 🚀 Démo complète sans matériel : broker + simulateur + persistance SQLite
 	@test -x $(PY) || { echo "❌ Pas de venv — lance d'abord : make install"; exit 1; }
