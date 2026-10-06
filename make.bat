@@ -15,6 +15,7 @@ if "%1"=="test"        goto test
 if "%1"=="test-full"   goto testfull
 if "%1"=="test-materiel" goto testmateriel
 if "%1"=="check-materiel" goto checkmateriel
+if "%1"=="monitor-esp32" goto monitoresp32
 if "%1"=="api"         goto api
 if "%1"=="train"       goto train
 if "%1"=="detect"      goto detect
@@ -65,6 +66,10 @@ goto end
 
 :checkmateriel
 %PY% scripts\test_materiel.py --scan
+goto end
+
+:monitoresp32
+%PY% scripts\esp32_monitor.py
 goto end
 
 :api
