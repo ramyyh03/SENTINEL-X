@@ -59,7 +59,12 @@ def _injecter_anomalies(df: pd.DataFrame, rng: np.random.Generator) -> np.ndarra
     n = len(df)
     label = np.zeros(n, dtype=int)
     cible = int(n * CONTAMINATION)
-    t, h, g, p = df["temp"].values, df["humidity"].values, df["gas"].values, df["presence"].values
+    # copy=True : indispensable: avec numpy récent, .to_numpy() peut renvoyer une
+    # vue en LECTURE SEULE → l'écriture en place planterait ("read-only").
+    t = df["temp"].to_numpy(dtype=float, copy=True)
+    h = df["humidity"].to_numpy(dtype=float, copy=True)
+    g = df["gas"].to_numpy(dtype=float, copy=True)
+    p = df["presence"].to_numpy(dtype=int, copy=True)
 
     def marque(start: int, length: int) -> None:
         label[start : min(start + length, n)] = 1
