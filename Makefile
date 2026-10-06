@@ -10,7 +10,7 @@ PIP  := $(VENV)/bin/pip
 DC   := docker compose -f docker-compose.dev.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap install check broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show
+.PHONY: help bootstrap install check test broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show
 
 bootstrap: ## 🧰 Machine neuve : installe les prérequis SYSTÈME (Python, Docker…) PUIS install
 	@bash scripts/bootstrap.sh
@@ -37,6 +37,10 @@ install: ## ⭐ Installe tout (venv + dépendances) PUIS vérifie l'environnemen
 check: ## Vérifie que toutes les dépendances sont installées (sans rien installer)
 	@test -x $(PY) || { echo "❌ Pas de venv — lance d'abord : make install"; exit 1; }
 	@$(PY) scripts/check_env.py
+
+test: ## 🩺 TOUT tester + rapport de santé complet (deps, briques 3/5/6, firmware, sécu)
+	@test -x $(PY) || { echo "❌ Pas de venv — lance d'abord : make install"; exit 1; }
+	@$(PY) scripts/healthcheck.py
 
 broker: ## Démarre le broker MQTT local (Mosquitto, port 1883)
 	@$(DC) up -d
