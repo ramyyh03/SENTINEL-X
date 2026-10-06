@@ -78,7 +78,13 @@ def t_brique3_sqlite() -> tuple[str, str]:
 def t_brique3_mqtt() -> tuple[str, str]:
     """BRIQUE 3 : aller-retour MQTT réel (publish → subscribe) via le broker Docker."""
     if shutil.which("docker") is None:
-        return SKIP, "Docker absent"
+        return SKIP, "Docker non installé"
+    # Le CLI existe-t-il ET le moteur tourne-t-il ? (docker info échoue si non démarré)
+    try:
+        if subprocess.run(["docker", "info"], capture_output=True, timeout=20).returncode != 0:
+            return SKIP, "Docker installé mais non démarré (lance Docker Desktop)"
+    except (OSError, subprocess.TimeoutExpired):
+        return SKIP, "Docker installé mais non démarré (lance Docker Desktop)"
     compose = ["docker", "compose", "-f", str(PROJECT_ROOT / "docker-compose.dev.yml")]
     try:
         subprocess.run(compose + ["up", "-d"], cwd=PROJECT_ROOT,

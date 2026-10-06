@@ -108,6 +108,16 @@ def _attendre(host: str, port: int, timeout_s: int) -> bool:
     return False
 
 
+def _docker_demarre() -> bool:
+    """True si le CLI docker existe ET le moteur tourne (docker info OK)."""
+    if shutil.which("docker") is None:
+        return False
+    try:
+        return subprocess.run(["docker", "info"], capture_output=True, timeout=20).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def _broker_up(ctx: Contexte) -> bool:
     """S'assure que le broker dev (1883) tourne ; le démarre via Docker si besoin."""
     if _port_ouvert("localhost", 1883):
@@ -174,10 +184,11 @@ def phase_prechecks(ctx: Contexte) -> tuple[str, str]:
 
 def phase_mqtt(ctx: Contexte) -> tuple[str, str]:
     """2. Connexion broker + publish/subscribe aller-retour."""
-    if shutil.which("docker") is None:
-        return SKIP, "Docker non installé → broker MQTT indisponible (installe Docker Desktop)"
+    if not _docker_demarre():
+        return SKIP, ("Docker non installé" if shutil.which("docker") is None
+                      else "Docker installé mais non démarré (lance Docker Desktop)")
     if not _broker_up(ctx):
-        return FAIL, "broker injoignable (Docker présent mais démarrage KO)"
+        return FAIL, "broker injoignable (Docker démarré mais compose KO)"
     recu: list[bool] = []
     sub = _make_client()
     sub.on_message = lambda *a: recu.append(True)
@@ -271,8 +282,9 @@ def phase_dashboard(ctx: Contexte) -> tuple[str, str]:
 
 def phase_e2e(ctx: Contexte) -> tuple[str, str]:
     """7. Chaîne complète : simulateur → mqtt_client → SQLite (+ détection)."""
-    if shutil.which("docker") is None:
-        return SKIP, "Docker non installé → chaîne E2E non testable"
+    if not _docker_demarre():
+        return SKIP, ("Docker non installé" if shutil.which("docker") is None
+                      else "Docker installé mais non démarré (lance Docker Desktop)")
     if not _broker_up(ctx):
         return FAIL, "broker indisponible pour l'E2E"
     avant = max(_compter_sensor_data(ctx), 0)
