@@ -334,7 +334,8 @@ def main() -> int:
     app = create_app()
     logger.info("API SENTINEL-X démarrée sur http://%s:%s (dashboard /dashboard)",
                 API_HOST, API_PORT)
-    app.run(host=API_HOST, port=API_PORT, debug=False)
+    # threaded=True : plusieurs visiteurs du dashboard servis en parallèle
+    app.run(host=API_HOST, port=API_PORT, debug=False, threaded=True)
     return 0
 
 
