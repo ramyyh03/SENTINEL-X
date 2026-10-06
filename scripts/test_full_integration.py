@@ -174,8 +174,10 @@ def phase_prechecks(ctx: Contexte) -> tuple[str, str]:
 
 def phase_mqtt(ctx: Contexte) -> tuple[str, str]:
     """2. Connexion broker + publish/subscribe aller-retour."""
+    if shutil.which("docker") is None:
+        return SKIP, "Docker non installé → broker MQTT indisponible (installe Docker Desktop)"
     if not _broker_up(ctx):
-        return FAIL, "broker injoignable (Docker absent ou démarrage KO)"
+        return FAIL, "broker injoignable (Docker présent mais démarrage KO)"
     recu: list[bool] = []
     sub = _make_client()
     sub.on_message = lambda *a: recu.append(True)
@@ -269,6 +271,8 @@ def phase_dashboard(ctx: Contexte) -> tuple[str, str]:
 
 def phase_e2e(ctx: Contexte) -> tuple[str, str]:
     """7. Chaîne complète : simulateur → mqtt_client → SQLite (+ détection)."""
+    if shutil.which("docker") is None:
+        return SKIP, "Docker non installé → chaîne E2E non testable"
     if not _broker_up(ctx):
         return FAIL, "broker indisponible pour l'E2E"
     avant = max(_compter_sensor_data(ctx), 0)
@@ -346,8 +350,9 @@ def _rapport(phases: list[TestPhase]) -> int:
     n = len(phases)
     ok = sum(1 for p in phases if p.status == PASS)
     fails = [p for p in phases if p.status == FAIL]
-    warns = [p for p in phases if p.status in (WARN,)]
-    if not fails and not warns:
+    warns = [p for p in phases if p.status == WARN]
+    skips = [p for p in phases if p.status == SKIP]
+    if not fails and not warns and not skips:
         verdict = f"{Fore.GREEN}✅ READY"
     elif not fails:
         verdict = f"{Fore.YELLOW}⚠️  READY (avec réserves)"
@@ -356,9 +361,9 @@ def _rapport(phases: list[TestPhase]) -> int:
     print("│ " + f"GLOBAL SCORE: {ok}/{n}  {verdict}{Style.RESET_ALL}".ljust(largeur + 8) + "│")
     print("└" + "─" * largeur + "┘")
 
-    if fails or warns:
+    if fails or warns or skips:
         print("\nDétails :")
-        for p in fails + warns:
+        for p in fails + warns + skips:
             print(f"  {COULEUR[p.status]}{ICONE[p.status]} {p.nom}{Style.RESET_ALL} : {p.detail}")
     print(f"\n📄 Log complet : logs/test_integration.log")
     return 1 if fails else 0
