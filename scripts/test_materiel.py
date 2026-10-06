@@ -45,6 +45,25 @@ def scanner_cameras(maxi: int = 5) -> list[int]:
     return trouvees
 
 
+def detecter_esp32() -> tuple[str | None, str]:
+    """Cherche un ESP32 sur les ports série USB. Retourne (port, message)."""
+    try:
+        from serial.tools import list_ports
+    except ImportError:
+        return None, "pyserial non installé (venv\\Scripts\\python -m pip install pyserial)"
+
+    # Puces USB-série courantes des cartes ESP32 : CP210x, CH340/CH910, Silicon Labs, WCH
+    cles = ("CP210", "CH340", "CH910", "USB-SERIAL", "SILICON LABS", "WCH", "ESP32")
+    ports = list(list_ports.comports())
+    for p in ports:
+        texte = f"{p.description or ''} {p.manufacturer or ''}".upper()
+        if any(k in texte for k in cles):
+            return p.device, f"{p.device} — {p.description}"
+    if ports:
+        return None, f"ports série présents mais aucun ESP32 reconnu : {[p.device for p in ports]}"
+    return None, "aucun port série détecté (ESP32 branché ? pilote CP210x/CH340 installé ?)"
+
+
 def capturer(index: int) -> list[Path]:
     """Capture NB_FRAMES images sur la caméra `index` et les enregistre en JPG."""
     CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
@@ -88,8 +107,8 @@ def analyser(chemins: list[Path]) -> list[dict]:
     return resultats
 
 
-def ecrire_rapport(index: int | None, cameras: list[int],
-                   resultats: list[dict], erreur: str | None) -> None:
+def ecrire_rapport(index: int | None, cameras: list[int], resultats: list[dict],
+                   erreur: str | None, esp_port: str | None, esp_msg: str) -> None:
     """Génère RAPPORT-MATERIEL.md (résumé lisible du test webcam)."""
     maintenant = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     lignes = [
@@ -130,9 +149,14 @@ def ecrire_rapport(index: int | None, cameras: list[int],
             "> ℹ️ 0 personne détectée est NORMAL si personne n'est devant la caméra. "
             "Pour valider la détection, se placer dans le champ et relancer.",
         ]
-    lignes += ["", "## ESP32", "",
-               "Non testé par ce script (nécessite le flash + le moniteur série).",
-               "Voir la checklist : `BRIQUES/CHECKLIST-MATERIEL.md`.", ""]
+    etat_esp = "✅ détecté" if esp_port else "❌ non détecté"
+    lignes += ["", "## ESP32 (port série USB)", "",
+               f"- {etat_esp} : {esp_msg}", ""]
+    if esp_port:
+        lignes += ["> ESP32 branché. Pour voir ses mesures : le flasher puis `pio device monitor -b 115200`,",
+                   "> et pour le dashboard, aligner `.env` sur le broker (voir CHECKLIST-MATERIEL.md partie B).", ""]
+    else:
+        lignes += ["> Branche l'ESP32 en USB (câble data) ; installe le pilote CP210x/CH340 si besoin.", ""]
 
     RAPPORT.write_text("\n".join(lignes), encoding="utf-8")
 
@@ -142,15 +166,29 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="SENTINEL-X — Test matériel webcam")
     parser.add_argument("--camera", type=int, default=None, help="index caméra à tester")
     parser.add_argument("--max", type=int, default=5, help="index max pour le scan auto")
+    parser.add_argument("--scan", action="store_true",
+                        help="détection rapide (présence webcam + ESP32), sans capture ni YOLO")
     args = parser.parse_args()
 
-    print("🔍 Recherche des caméras…")
+    # --- Détection de présence (rapide) ---
+    print("🔍 Détection du matériel…")
     cameras = scanner_cameras(args.max)
-    print(f"   Caméras détectées : {cameras if cameras else 'AUCUNE'}")
+    print(f"   📷 Webcam(s) : {cameras if cameras else 'AUCUNE'}")
+    esp_port, esp_msg = detecter_esp32()
+    print(f"   🔌 ESP32 : {esp_msg}")
 
     index = args.camera if args.camera is not None else (cameras[0] if cameras else None)
     resultats, erreur = [], None
 
+    if args.scan:  # mode présence uniquement
+        ecrire_rapport(index, cameras, resultats, None, esp_port, esp_msg)
+        print(f"\n📄 Rapport : {RAPPORT.relative_to(PROJECT_ROOT)}")
+        ok = bool(cameras) and bool(esp_port)
+        print("✅ Tout le matériel est détecté." if ok
+              else "⚠️ Matériel incomplet (voir ci-dessus).")
+        return 0 if ok else 1
+
+    # --- Test webcam complet (capture + YOLO) ---
     if index is None:
         erreur = "aucune caméra détectée (branchement USB ? permissions Windows ?)"
         print(f"❌ {erreur}")
@@ -161,13 +199,12 @@ def main() -> int:
             print("🧠 Analyse YOLOv8n…")
             resultats = analyser(chemins)
             for r in resultats:
-                print(f"   {r['image']} : {r['personnes']} personne(s), "
-                      f"{r['latence_ms']} ms")
+                print(f"   {r['image']} : {r['personnes']} personne(s), {r['latence_ms']} ms")
         except Exception as exc:
             erreur = f"{exc.__class__.__name__}: {exc}"
             print(f"❌ {erreur}")
 
-    ecrire_rapport(index, cameras, resultats, erreur)
+    ecrire_rapport(index, cameras, resultats, erreur, esp_port, esp_msg)
     print(f"\n📄 Rapport écrit : {RAPPORT.relative_to(PROJECT_ROOT)}")
     return 0 if (resultats and not erreur) else 1
 

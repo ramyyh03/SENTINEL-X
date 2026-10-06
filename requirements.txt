@@ -29,3 +29,6 @@ pytest>=7.4.0
 
 # --- API REST (Brique 7 : réception des alertes) ---
 flask>=3.0.0
+
+# --- Détection ESP32 (port série) ---
+pyserial>=3.5

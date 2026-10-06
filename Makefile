@@ -18,7 +18,7 @@ PIP := $(PY) -m pip
 DC  := docker compose -f docker-compose.dev.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap install check test test-full test-materiel broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
+.PHONY: help bootstrap install check test test-full test-materiel check-materiel broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
 
 bootstrap: ## 🧰 Machine neuve : installe les prérequis SYSTÈME (Python, Docker…) PUIS install
 	@bash scripts/bootstrap.sh
@@ -99,7 +99,10 @@ detect: ## 🔎 BRIQUE 6 : détection d'anomalies en temps réel sur data/sentin
 replay: ## 🔁 BRIQUE 6 : rejoue le dataset synthétique (test IA sans DB ni broker)
 	@$(PY) -m predictive.main_brique6 replay
 
-test-materiel: ## 📷 Test matériel : webcam réelle + YOLOv8 → RAPPORT-MATERIEL.md
+check-materiel: ## 🔌 Vérifie RAPIDEMENT que le matériel est branché (webcam + ESP32)
+	@$(PY) scripts/test_materiel.py --scan
+
+test-materiel: ## 📷 Test matériel COMPLET : webcam + YOLO + ESP32 → RAPPORT-MATERIEL.md
 	@$(PY) scripts/test_materiel.py
 
 detect-vision: ## 👁️ BRIQUE 5 : détection de personnes (webcam réelle) → alertes
