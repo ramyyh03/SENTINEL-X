@@ -10,7 +10,7 @@ PIP  := $(VENV)/bin/pip
 DC   := docker compose -f docker-compose.dev.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap install check broker broker-stop run simulate demo
+.PHONY: help bootstrap install check broker broker-stop run simulate demo train detect replay
 
 bootstrap: ## 🧰 Machine neuve : installe les prérequis SYSTÈME (Python, Docker…) PUIS install
 	@bash scripts/bootstrap.sh
@@ -50,6 +50,16 @@ run: ## Lance l'abonné MQTT (reçoit les capteurs → SQLite)
 
 simulate: ## Lance le simulateur ESP32 (10 mesures sur sentinel/sensors)
 	@$(PY) simulate/fake_sensors_esp32.py --simulate
+
+train: ## 🧠 BRIQUE 6 : génère les données + entraîne Forest/LOF + évalue
+	@test -x $(PY) || { echo "❌ Pas de venv — lance d'abord : make install"; exit 1; }
+	@$(PY) -m predictive.main_brique6 train
+
+detect: ## 🔎 BRIQUE 6 : détection d'anomalies en temps réel sur data/sentinel.db
+	@$(PY) -m predictive.main_brique6 detect
+
+replay: ## 🔁 BRIQUE 6 : rejoue le dataset synthétique (test IA sans DB ni broker)
+	@$(PY) -m predictive.main_brique6 replay
 
 demo: ## 🚀 Démo complète sans matériel : broker + simulateur + persistance SQLite
 	@test -x $(PY) || { echo "❌ Pas de venv — lance d'abord : make install"; exit 1; }

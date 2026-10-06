@@ -35,6 +35,9 @@ data/*.db-journal
 *.log
 logs/
 
+# --- Modèles IA entraînés (binaires régénérables via `make train`) ---
+models/
+
 # --- macOS ---
 .DS_Store
 .AppleDouble
