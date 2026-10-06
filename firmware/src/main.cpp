@@ -19,7 +19,11 @@
 #include <Adafruit_SSD1306.h>
 #include <DHT.h>
 #include <WiFi.h>
+#ifdef DEV_PLAIN_MQTT
+#include <WiFiClient.h>       // DEV : client TCP EN CLAIR (1883, sans TLS)
+#else
 #include <WiFiClientSecure.h> // client TCP chiffré (TLS)
+#endif
 #include <WiFiManager.h>      // tzapu/WiFiManager — portail de config WiFi
 #include <PubSubClient.h>     // knolleary — client MQTT
 #include <ArduinoJson.h>      // bblanchon — sérialisation JSON (v7)
@@ -35,7 +39,11 @@ const int PIN_MQ2 = 34;  // MQ-2       sur GPIO 34 (gaz, entrée analogique ADC1
 // --- Constantes réseau / MQTT ---
 const char* AP_NAME        = "SENTINEL-X-SETUP";  // réseau WiFi de configuration
 const char* MQTT_TOPIC     = "sentinel/sensors";  // topic attendu par la Brique 3
+#ifdef DEV_PLAIN_MQTT
+const int   MQTT_PORT      = 1883;                 // DEV : MQTT en clair (broker dev)
+#else
 const int   MQTT_PORT      = 8883;                 // MQTTS (TLS) — plus de port en clair
+#endif
 const int   PORTAL_TIMEOUT = 180;                  // s : ferme le portail si inactif
 
 // --- Cadence de lecture ---
@@ -45,7 +53,11 @@ const unsigned long MQTT_RETRY_MS = 5000;  // délai entre deux tentatives de co
 // --- Objets matériels / réseau ---
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
 DHT dht(PIN_DHT, DHT22);
+#ifdef DEV_PLAIN_MQTT
+WiFiClient wifiClient;         // DEV : pas de TLS
+#else
 WiFiClientSecure wifiClient;
+#endif
 PubSubClient mqtt(wifiClient);
 Preferences  prefs;
 
@@ -138,7 +150,11 @@ void configurerWiFi() {
 
   // Config MQTT incomplète (ex. carte flashée avec l'ancien firmware) → on force
   // le portail. Sinon : identifiants WiFi mémorisés, et portail seulement en échec.
+#ifdef DEV_PLAIN_MQTT
+  bool configIncomplete = strlen(brokerIp) == 0;                         // DEV : seule l'IP suffit
+#else
   bool configIncomplete = strlen(brokerIp) == 0 || strlen(mqttUser) == 0 || strlen(mqttPass) == 0;
+#endif
   bool connecte = configIncomplete ? wm.startConfigPortal(AP_NAME, apPassword)
                                    : wm.autoConnect(AP_NAME, apPassword);
   if (!connecte) {
@@ -170,7 +186,9 @@ void configurerWiFi() {
 
   // TLS : l'ESP32 n'accepte que les brokers dont le certificat est signé par
   // notre CA ET émis pour l'adresse saisie au portail (sinon : connexion refusée).
+#ifndef DEV_PLAIN_MQTT
   wifiClient.setCACert(CA_CERT);
+#endif
   mqtt.setServer(brokerIp, MQTT_PORT);
 }
 
@@ -202,6 +220,13 @@ void assurerMQTT() {
   derniereTentativeMQTT = millis();
 
   String clientId = "sentinel-esp32-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+#ifdef DEV_PLAIN_MQTT
+  if (mqtt.connect(clientId.c_str())) {              // DEV : broker anonyme (1883)
+    Serial.println("MQTT connecte (dev, sans TLS)");
+    return;
+  }
+  Serial.printf("MQTT : echec (state=%d)\n", mqtt.state());
+#else
   if (mqtt.connect(clientId.c_str(), mqttUser, mqttPass)) {
     Serial.println("MQTTS connecte (TLS + authentification)");
     return;
@@ -210,6 +235,7 @@ void assurerMQTT() {
   char erreurTls[100] = "";
   wifiClient.lastError(erreurTls, sizeof(erreurTls));
   Serial.printf("MQTTS : echec (state=%d) %s\n", mqtt.state(), erreurTls);
+#endif
 }
 
 void publierMesure() {
