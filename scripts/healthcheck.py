@@ -35,7 +35,7 @@ COULEUR = {OK: Fore.GREEN, FAIL: Fore.RED, SKIP: Fore.YELLOW}
 def t_dependances() -> tuple[str, str]:
     """Toutes les dépendances Python s'importent-elles ?"""
     paquets = ["cv2", "ultralytics", "sklearn", "pandas", "numpy", "scipy",
-               "paho.mqtt.client", "requests", "dotenv", "colorama"]
+               "paho.mqtt.client", "requests", "dotenv", "colorama", "flask"]
     manquants = [p for p in paquets if not _importable(p)]
     if manquants:
         return FAIL, f"manquants: {', '.join(manquants)} (make install)"

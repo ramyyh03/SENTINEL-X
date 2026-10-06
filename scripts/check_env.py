@@ -22,6 +22,7 @@ PACKAGES = {
     "dotenv": "python-dotenv",
     "yaml": "pyyaml",
     "colorama": "colorama",
+    "flask": "flask",
 }
 
 

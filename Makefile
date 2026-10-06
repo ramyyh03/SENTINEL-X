@@ -23,16 +23,31 @@ help: ## Affiche cette aide
 	@echo ""
 	@echo "👉 Première fois ? Lance :  make install"
 
-install: ## ⭐ Installe tout (venv + dépendances) PUIS vérifie l'environnement
-	@command -v python3 >/dev/null 2>&1 || { echo "❌ Python3 introuvable — installe Python 3.9+"; exit 1; }
+install: ## ⭐ Setup complet : Python, venv, deps, Docker, dossiers, .env
+	@echo "🛡️  SENTINEL-X — Installation"
+	@# 1. Python 3.8+ obligatoire
+	@command -v python3 >/dev/null 2>&1 || { echo "❌ Python3 introuvable — installe Python 3.8+"; exit 1; }
+	@python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,8) else 1)" \
+		|| { echo "❌ Python 3.8+ requis (détecté : $$(python3 -V))"; exit 1; }
+	@echo "✅ $$(python3 -V)"
+	@# 2. venv
 	@test -d $(VENV) || { echo "📦 Création du virtualenv…"; python3 -m venv $(VENV); }
-	@echo "📥 Mise à jour de pip…"
+	@# 3. dépendances
+	@echo "📥 pip + dépendances (requirements.txt)…"
 	@$(PIP) install --quiet --upgrade pip
-	@echo "📦 Installation des dépendances (requirements.txt)…"
 	@$(PIP) install --quiet -r requirements.txt
+	@# 4. Docker (nécessaire pour MQTT/E2E — non bloquant)
+	@command -v docker >/dev/null 2>&1 && echo "✅ Docker détecté" \
+		|| echo "⚠️  Docker absent — requis pour MQTT & make test-full (installe Docker Desktop)"
+	@# 5. dossiers runtime
+	@mkdir -p data logs models && echo "✅ Dossiers data/ logs/ models/ prêts"
+	@# 6. .env depuis le modèle
+	@test -f .env && echo "✅ .env déjà présent" \
+		|| { cp .env.example .env && echo "📝 .env créé depuis .env.example"; }
+	@# 7. vérification finale des imports
 	@$(MAKE) --no-print-directory check
 	@echo ""
-	@echo "✅ Prêt ! Pour une démo complète sans matériel :  make demo"
+	@echo "✅ SETUP COMPLETE — étape suivante :  make test-full"
 
 check: ## Vérifie que toutes les dépendances sont installées (sans rien installer)
 	@test -x $(PY) || { echo "❌ Pas de venv — lance d'abord : make install"; exit 1; }
