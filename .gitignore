@@ -72,3 +72,5 @@ secrets.h
 .idea/
 *.swp
 docker/mosquitto/config/passwd
+
+*.srl
