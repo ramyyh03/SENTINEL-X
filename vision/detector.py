@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
 import sys
 import time
 from datetime import datetime, timezone
@@ -43,7 +44,9 @@ CONF_THRESHOLD = 0.50         # on ne garde que les détections sûres à ≥ 50
 FRAME_W, FRAME_H = 640, 480   # résolution d'inférence
 MAX_LATENCY_MS = 100          # objectif : traiter une frame en < 100 ms
 ALERT_COOLDOWN_S = 5          # anti-spam : pas 2 alertes identiques en < 5 s
-CAMERA_INDEX = 0
+# Index caméra : 0 = 1re caméra. Sur un PC avec webcam intégrée, la webcam USB
+# (UGREEN CM678) est souvent l'index 1 → configurable via .env ou --camera.
+CAMERA_INDEX = int(os.getenv("CAMERA_INDEX", "0"))
 
 API_URL = os.getenv("API_URL", "http://localhost:3000")
 API_ENDPOINT = os.getenv(
@@ -131,26 +134,64 @@ def frame_simulee(compteur: int) -> np.ndarray:
     return frame
 
 
-def _ouvrir_webcam() -> cv2.VideoCapture | None:
-    """Tente d'ouvrir la webcam. Retourne None si indisponible (→ simulation)."""
-    cap = cv2.VideoCapture(CAMERA_INDEX)
+def _backend_cv2() -> int:
+    """Backend OpenCV adapté à l'OS (crucial pour l'ouverture webcam).
+
+    Windows : DirectShow (CAP_DSHOW) = ouverture rapide et fiable des webcams USB.
+    macOS / Linux : backend par défaut (AVFoundation / V4L2).
+    """
+    return cv2.CAP_DSHOW if platform.system() == "Windows" else cv2.CAP_ANY
+
+
+def _message_permission() -> str:
+    """Message d'aide aux permissions caméra selon l'OS."""
+    systeme = platform.system()
+    if systeme == "Darwin":
+        return "macOS : Réglages → Confidentialité & sécurité → Caméra → autoriser le Terminal."
+    if systeme == "Windows":
+        return "Windows : Paramètres → Confidentialité → Caméra → autoriser les applis de bureau."
+    return "Linux : vérifier les permissions /dev/video* (ajouter l'utilisateur au groupe 'video')."
+
+
+def _ouvrir_webcam(index: int = CAMERA_INDEX) -> cv2.VideoCapture | None:
+    """Tente d'ouvrir la webcam `index`. Retourne None si indisponible (→ simulation)."""
+    cap = cv2.VideoCapture(index, _backend_cv2())
     if not cap.isOpened():
         cap.release()
         return None
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_W)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_H)
-    ok, _ = cap.read()  # une lecture test : révèle un refus de permission macOS
+    ok, _ = cap.read()  # une lecture test : révèle un refus de permission (TCC macOS / Windows)
     if not ok:
         cap.release()
         return None
     return cap
 
 
+def lister_cameras(maxi: int = 5) -> None:
+    """Scanne les index 0..maxi et affiche les caméras ouvrables (pour trouver la bonne)."""
+    log("SCAN", Fore.MAGENTA, f"Recherche des caméras (index 0 à {maxi})…")
+    trouvees = 0
+    for idx in range(maxi + 1):
+        cap = cv2.VideoCapture(idx, _backend_cv2())
+        if cap.isOpened():
+            ok, _ = cap.read()
+            etat = "OK (lecture)" if ok else "ouverte mais lecture KO (permission ?)"
+            log("CAMÉRA", Fore.GREEN, f"  index {idx} : {etat}")
+            trouvees += 1
+        cap.release()
+    if not trouvees:
+        log("CAMÉRA", Fore.YELLOW, "Aucune caméra détectée.")
+        log("AIDE", Fore.YELLOW, _message_permission())
+
+
 def run_detection(api_url: str | None = None, simulate: bool = False,
-                  show: bool = False, frames: int = 0) -> int:
+                  show: bool = False, frames: int = 0,
+                  camera_index: int = CAMERA_INDEX) -> int:
     """Boucle principale : capture → détecte → alerte si personne. Ctrl+C pour arrêter.
 
     `frames` > 0 limite le nombre d'itérations (utile pour les tests) ; 0 = infini.
+    `camera_index` : 0 = 1re caméra ; la webcam USB (UGREEN CM678) est souvent 1.
     """
     global API_ENDPOINT
     if api_url:
@@ -160,12 +201,12 @@ def run_detection(api_url: str | None = None, simulate: bool = False,
 
     cap = None
     if not simulate:
-        cap = _ouvrir_webcam()
+        cap = _ouvrir_webcam(camera_index)
         if cap is None:
             log("CAMÉRA", Fore.YELLOW,
-                "Webcam indisponible (absente ou permission refusée).")
-            log("macOS", Fore.YELLOW,
-                "Si refus : Réglages → Confidentialité & sécurité → Caméra → autoriser le Terminal.")
+                f"Webcam (index {camera_index}) indisponible (absente ou permission refusée).")
+            log("AIDE", Fore.YELLOW, _message_permission())
+            log("AIDE", Fore.YELLOW, "Webcam USB non trouvée ? Essaie un autre index : --camera 1")
             simulate = True
 
     if simulate:
@@ -238,9 +279,16 @@ def main() -> int:
     parser.add_argument("--simulate", action="store_true", help="mode sans webcam (frames synthétiques)")
     parser.add_argument("--show", action="store_true", help="affiche la fenêtre OpenCV (debug)")
     parser.add_argument("--frames", type=int, default=0, help="nb de frames max (0 = infini)")
+    parser.add_argument("--camera", type=int, default=CAMERA_INDEX,
+                        help="index de la caméra (0 = 1re ; webcam USB souvent 1)")
     parser.add_argument("--api", type=str, default=None, help="URL de l'API d'alertes")
+    parser.add_argument("--list", action="store_true", help="liste les caméras disponibles puis quitte")
     args = parser.parse_args()
-    return run_detection(api_url=args.api, simulate=args.simulate, show=args.show, frames=args.frames)
+    if args.list:
+        lister_cameras()
+        return 0
+    return run_detection(api_url=args.api, simulate=args.simulate, show=args.show,
+                         frames=args.frames, camera_index=args.camera)
 
 
 if __name__ == "__main__":

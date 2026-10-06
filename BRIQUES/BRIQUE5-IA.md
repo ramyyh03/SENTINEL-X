@@ -45,10 +45,17 @@ make detect-vision-show   # avec fenêtre OpenCV (debug visuel)
 
 Options directes :
 ```bash
+python -m vision.detector --list                  # liste les caméras branchées (trouver la UGREEN)
+python -m vision.detector --camera 1              # choisir la webcam USB (souvent index 1)
 python -m vision.detector --simulate --frames 5   # borne à 5 frames (test rapide)
 python -m vision.detector --show                  # affichage debug
 python -m vision.detector --api http://IP:3000/api/v1/alerts
 ```
+
+> 🪟 **Sous Windows** (sans `make`), remplacer `make detect-vision` par :
+> ```powershell
+> venv\Scripts\python -m vision.detector            # (ou --simulate / --camera 1 / --list)
+> ```
 
 > Au **1er lancement**, `ultralytics` télécharge `yolov8n.pt` (~6 Mo) automatiquement (non commité, gitignoré).
 
@@ -67,10 +74,30 @@ python -m vision.detector --api http://IP:3000/api/v1/alerts
 
 ---
 
-## 🍎 Compatibilité macOS
+## 💻 Compatibilité OS (Windows + macOS)
 
-- **Permissions caméra (TCC)** : au 1er accès, macOS demande l'autorisation. En cas de refus, un message clair invite à : *Réglages → Confidentialité & sécurité → Caméra → autoriser le Terminal*. Sans accès, le module bascule **automatiquement en simulation**.
-- **Pas de `cv2.imshow()` par défaut** (peut bloquer en headless) — l'affichage n'est activé qu'avec `--show`.
+Le projet tourne **sur le PC Windows** (serveur de l'équipe) **et** sur Mac. Le code adapte automatiquement le backend caméra d'OpenCV selon l'OS :
+
+| OS | Backend caméra | Permissions |
+|---|---|---|
+| **Windows** | **DirectShow** (`CAP_DSHOW`) — ouverture rapide/fiable des webcams USB | Paramètres → Confidentialité → Caméra → autoriser les applis de bureau |
+| **macOS** | AVFoundation (défaut) | Réglages → Confidentialité & sécurité → Caméra → autoriser le Terminal |
+| **Linux** | V4L2 (défaut) | groupe `video` / `/dev/video*` |
+
+- En cas de **refus de permission** ou de caméra absente → bascule **automatique en simulation** (avec message d'aide propre à l'OS).
+- **Pas de `cv2.imshow()` par défaut** (peut bloquer en headless) — affichage seulement avec `--show`.
+
+### 📷 Webcam USB — UGREEN CM678 (P/N 15728)
+
+C'est une webcam **UVC standard** → **plug-and-play, aucun pilote** à installer (Windows comme macOS).
+
+- Sur un PC avec **caméra intégrée**, la UGREEN n'est **pas forcément l'index 0** (souvent **1**). Pour trouver le bon index :
+  ```bash
+  python -m vision.detector --list        # affiche les caméras ouvrables (index 0,1,2…)
+  python -m vision.detector --camera 1    # puis lancer sur le bon index
+  ```
+- Ou fixer `CAMERA_INDEX=1` dans le `.env` (pris par défaut).
+- La UGREEN est HD (1080p) ; on capture/redimensionne en **640×480** pour l'inférence (vitesse).
 
 ---
 
