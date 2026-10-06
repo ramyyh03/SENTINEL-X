@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -56,7 +57,7 @@ class AlertStore:
     def _init_db(self) -> None:
         """Crée le dossier + la table si besoin."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             conn.execute(CREATE_TABLE_SQL)
             conn.commit()
 
@@ -70,7 +71,7 @@ class AlertStore:
             "details": json.dumps(alerte.get("details", {}), ensure_ascii=False),
         }
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn:
                 cur = conn.execute(INSERT_SQL, row)
                 conn.commit()
                 return cur.lastrowid
@@ -80,7 +81,7 @@ class AlertStore:
 
     def recent(self, limit: int = 50) -> list[dict[str, Any]]:
         """Retourne les `limit` dernières alertes (details reconverti en dict)."""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             rows = conn.execute(
                 "SELECT * FROM alerts ORDER BY id DESC LIMIT ?", (limit,)
             ).fetchall()
@@ -96,5 +97,5 @@ class AlertStore:
 
     def count(self) -> int:
         """Nombre total d'alertes stockées."""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             return conn.execute("SELECT COUNT(*) FROM alerts").fetchone()[0]

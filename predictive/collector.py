@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -70,7 +71,7 @@ class SQLiteCollector:
     def _init_db(self) -> None:
         """Crée le dossier parent + le fichier .db + la table au premier appel."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             conn.execute(CREATE_TABLE_SQL)
             conn.commit()
 
@@ -88,7 +89,7 @@ class SQLiteCollector:
             "presence": data.get("presence"),
         }
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn:
                 cursor = conn.execute(INSERT_SQL, row)
                 conn.commit()
                 return cursor.lastrowid
@@ -99,5 +100,5 @@ class SQLiteCollector:
 
     def count(self) -> int:
         """Nombre de lignes stockées (utile pour les tests/validation)."""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             return conn.execute("SELECT COUNT(*) FROM sensor_data").fetchone()[0]

@@ -63,14 +63,16 @@ def t_brique3_sqlite() -> tuple[str, str]:
 
     from predictive.collector import SQLiteCollector
 
-    with tempfile.TemporaryDirectory() as tmp:
+    tmp = tempfile.mkdtemp()
+    try:
         col = SQLiteCollector(db_path=str(Path(tmp) / "test.db"))
         rid = col.insert_reading(
             {"timestamp": "2026-10-06T00:00:00Z", "temp": 22.0,
              "humidity": 45.0, "gas": 120, "presence": 0})
-        if rid and col.count() == 1:
-            return OK, "insertion + lecture SQLite OK"
-    return FAIL, "insertion SQLite échouée"
+        ok = bool(rid) and col.count() == 1
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)  # Windows : tolère un fichier encore verrouillé
+    return (OK, "insertion + lecture SQLite OK") if ok else (FAIL, "insertion SQLite échouée")
 
 
 def t_brique3_mqtt() -> tuple[str, str]:
@@ -128,7 +130,8 @@ def t_brique7_api() -> tuple[str, str]:
     from api.alert_store import AlertStore
     from api.server import create_app
 
-    with tempfile.TemporaryDirectory() as tmp:
+    tmp = tempfile.mkdtemp()
+    try:
         app = create_app(AlertStore(db_path=str(Path(tmp) / "t.db")))
         c = app.test_client()
         ok = c.post("/api/v1/alerts", json={
@@ -136,9 +139,11 @@ def t_brique7_api() -> tuple[str, str]:
             "timestamp": "2026-10-06T10:00:00Z", "details": {}})
         bad = c.post("/api/v1/alerts", json={"source": "x"})  # invalide
         health = c.get("/health")
-        if ok.status_code == 201 and bad.status_code == 400 and health.status_code == 200:
-            return OK, f"/alerts (201/400) + /health OK ({health.get_json()['status']})"
-        return FAIL, f"codes inattendus: {ok.status_code}/{bad.status_code}/{health.status_code}"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)  # Windows : tolère un fichier encore verrouillé
+    if ok.status_code == 201 and bad.status_code == 400 and health.status_code == 200:
+        return OK, f"/alerts (201/400) + /health OK ({health.get_json()['status']})"
+    return FAIL, f"codes inattendus: {ok.status_code}/{bad.status_code}/{health.status_code}"
 
 
 def t_firmware() -> tuple[str, str]:
