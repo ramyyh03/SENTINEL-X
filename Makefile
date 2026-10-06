@@ -32,30 +32,23 @@ help: ## Affiche cette aide
 	@echo "👉 Première fois ? Lance :  make install"
 
 install: ## ⭐ Setup complet : Python, venv, deps, Docker, dossiers, .env
-	@echo "🛡️  SENTINEL-X — Installation"
-	@# 1. Python 3.8+ obligatoire
-	@command -v $(PYTHON) >/dev/null 2>&1 || { echo "❌ $(PYTHON) introuvable — installe Python 3.8+"; exit 1; }
+	@echo "SENTINEL-X - Installation"
+	@command -v $(PYTHON) >/dev/null 2>&1 || { echo "[X] $(PYTHON) introuvable - installe Python 3.8+"; exit 1; }
 	@$(PYTHON) -c "import sys; sys.exit(0 if sys.version_info >= (3,8) else 1)" \
-		|| { echo "❌ Python 3.8+ requis (détecté : $$($(PYTHON) -V))"; exit 1; }
-	@echo "✅ $$($(PYTHON) -V)"
-	@# 2. venv
-	@test -d $(VENV) || { echo "📦 Création du virtualenv…"; $(PYTHON) -m venv $(VENV); }
-	@# 3. dépendances
-	@echo "📥 pip + dépendances (requirements.txt)…"
+		|| { echo "[X] Python 3.8+ requis (detecte : $$($(PYTHON) -V))"; exit 1; }
+	@echo "[OK] $$($(PYTHON) -V)"
+	@test -d $(VENV) || { echo "Creation du virtualenv..."; $(PYTHON) -m venv $(VENV); }
+	@echo "pip + dependances (requirements.txt)..."
 	@$(PIP) install --quiet --upgrade pip
 	@$(PIP) install --quiet -r requirements.txt
-	@# 4. Docker (nécessaire pour MQTT/E2E — non bloquant)
-	@command -v docker >/dev/null 2>&1 && echo "✅ Docker détecté" \
-		|| echo "⚠️  Docker absent — requis pour MQTT & make test-full (installe Docker Desktop)"
-	@# 5. dossiers runtime
-	@mkdir -p data logs models && echo "✅ Dossiers data/ logs/ models/ prêts"
-	@# 6. .env depuis le modèle
-	@test -f .env && echo "✅ .env déjà présent" \
-		|| { cp .env.example .env && echo "📝 .env créé depuis .env.example"; }
-	@# 7. vérification finale des imports
+	@command -v docker >/dev/null 2>&1 && echo "[OK] Docker detecte" \
+		|| echo "[!] Docker absent - requis pour MQTT et make test-full"
+	@mkdir -p data logs models && echo "[OK] Dossiers data/ logs/ models/ prets"
+	@test -f .env && echo "[OK] .env deja present" \
+		|| { cp .env.example .env && echo "[OK] .env cree depuis .env.example"; }
 	@$(MAKE) --no-print-directory check
 	@echo ""
-	@echo "✅ SETUP COMPLETE — étape suivante :  make test-full"
+	@echo "SETUP COMPLETE - etape suivante :  make test-full"
 
 check: ## Vérifie que toutes les dépendances sont installées (sans rien installer)
 	@test -x $(PY) || { echo "❌ Pas de venv — lance d'abord : make install"; exit 1; }
