@@ -23,8 +23,10 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 import time
 from collections import defaultdict, deque
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -157,7 +159,24 @@ def create_app(store: AlertStore | None = None) -> Flask:
     def dashboard():
         return _page_dashboard(magasin.recent(50))
 
+    @app.get("/live")
+    def live():
+        return _page_live(_lire_capteurs(magasin.db_path, 20))
+
     return app
+
+
+def _lire_capteurs(db_path, limit: int = 20) -> list[dict]:
+    """Lit les dernières mesures capteurs (table sensor_data, même base que Brique 3/6)."""
+    try:
+        with closing(sqlite3.connect(db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT timestamp, temp, humidity, gas, presence "
+                "FROM sensor_data ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            return [dict(r) for r in rows]
+    except sqlite3.Error:
+        return []  # table pas encore créée (aucune donnée capteur)
 
 
 def _page_dashboard(alertes: list[dict]) -> str:
@@ -200,11 +219,67 @@ def _page_dashboard(alertes: list[dict]) -> str:
 </style></head>
 <body>
   <h1>🛡️ SENTINEL-X — Dashboard des alertes</h1>
-  <div class="sub">{len(alertes)} dernière(s) alerte(s) · rafraîchi toutes les 5 s · {maj}</div>
+  <div class="sub">{len(alertes)} dernière(s) alerte(s) · rafraîchi toutes les 5 s · {maj} · <a href="/live" style="color:#58a6ff;text-decoration:none">→ capteurs en direct</a></div>
   <table>
     <thead><tr><th>Timestamp</th><th>Source</th><th>Type</th><th>Confiance</th><th>Sévérité</th><th>Détails</th></tr></thead>
     <tbody>{lignes}</tbody>
   </table>
+</body></html>"""
+
+
+def _page_live(mesures: list[dict]) -> str:
+    """Page des mesures capteurs EN DIRECT (temp/humidité/gaz/présence), refresh 3 s."""
+    maj = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+    if not mesures:
+        corps = ("<p style='color:#8b949e'>Aucune mesure pour l'instant. "
+                 "Lance la Brique 3 (ESP32 ou simulateur) → les valeurs s'afficheront ici.</p>")
+    else:
+        d = mesures[0]  # mesure la plus récente
+        presence = int(d.get("presence") or 0)
+        gaz = float(d.get("gas") or 0)
+        # code couleur (comme l'OLED) : présence rouge, gaz élevé orange
+        c_pres = "#c0392b" if presence else "#27ae60"
+        c_gaz = "#e67e22" if gaz >= 1000 else "#58a6ff"
+        cartes = (
+            f"<div class='grid'>"
+            f"<div class='card'><div class='k'>Température</div><div class='v'>{d.get('temp','--')} °C</div></div>"
+            f"<div class='card'><div class='k'>Humidité</div><div class='v'>{d.get('humidity','--')} %</div></div>"
+            f"<div class='card'><div class='k'>Gaz (MQ-2)</div><div class='v' style='color:{c_gaz}'>{int(gaz)}</div></div>"
+            f"<div class='card'><div class='k'>Présence (PIR)</div><div class='v' style='color:{c_pres}'>"
+            f"{'🚶 OUI' if presence else '— non'}</div></div>"
+            f"</div>"
+        )
+        rangs = ""
+        for m in mesures:
+            pres = "🚶" if int(m.get("presence") or 0) else "—"
+            rangs += (f"<tr><td>{m.get('timestamp','')}</td><td>{m.get('temp','')}</td>"
+                      f"<td>{m.get('humidity','')}</td><td>{int(float(m.get('gas') or 0))}</td>"
+                      f"<td style='text-align:center'>{pres}</td></tr>")
+        corps = cartes + (
+            "<table><thead><tr><th>Timestamp</th><th>Temp °C</th><th>Humi %</th>"
+            "<th>Gaz</th><th>Présence</th></tr></thead><tbody>" + rangs + "</tbody></table>")
+
+    return f"""<!doctype html>
+<html lang="fr"><head>
+<meta charset="utf-8"><meta http-equiv="refresh" content="3">
+<title>SENTINEL-X — Capteurs en direct</title>
+<style>
+  body {{ font-family: system-ui, sans-serif; background:#1b1f23; color:#e6e6e6; margin:0; padding:24px; }}
+  h1 {{ font-size:20px; margin:0 0 4px; }}
+  .sub {{ color:#8b949e; font-size:13px; margin-bottom:16px; }}
+  a {{ color:#58a6ff; text-decoration:none; }}
+  .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:14px; margin-bottom:20px; }}
+  .card {{ background:#24292e; border:1px solid #30363d; border-radius:10px; padding:16px; }}
+  .k {{ color:#8b949e; font-size:12px; text-transform:uppercase; letter-spacing:.5px; }}
+  .v {{ font-size:30px; font-weight:700; margin-top:6px; }}
+  table {{ width:100%; border-collapse:collapse; background:#24292e; border-radius:8px; overflow:hidden; }}
+  th, td {{ padding:8px 12px; text-align:left; font-size:13px; border-bottom:1px solid #30363d; }}
+  th {{ background:#2d333b; color:#adbac7; font-size:11px; text-transform:uppercase; }}
+</style></head>
+<body>
+  <h1>🛡️ SENTINEL-X — Capteurs en direct</h1>
+  <div class="sub">Rafraîchi toutes les 3 s · {maj} · <a href="/dashboard">→ voir les alertes</a></div>
+  {corps}
 </body></html>"""
 
 

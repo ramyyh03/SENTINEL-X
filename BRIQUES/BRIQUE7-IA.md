@@ -23,6 +23,7 @@ Brique 6 (Prédictif) ┘                          (valide + rate limit + log IP
 |---|---|---|
 | `POST` | `/api/v1/alerts` | Reçoit une alerte (JSON). `201` si OK, `400` si invalide, `415` si mauvais Content-Type, `429` si rate limit |
 | `GET` | `/dashboard` | Page HTML : 50 dernières alertes, code couleur par sévérité, auto-refresh 5 s |
+| `GET` | `/live` | Mesures capteurs EN DIRECT (temp/humidité/gaz/présence), auto-refresh 3 s |
 | `GET` | `/health` | `{"status":"ok","alerts_count":N,"uptime":"..."}` |
 
 ### Exemples `curl`
