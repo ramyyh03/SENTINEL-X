@@ -42,6 +42,12 @@
 #define ALERTES_RX 1
 #endif
 
+// Clé HMAC par défaut si secrets.h ne la définit pas : garantit que l'env
+// esp32dev-full COMPILE même avec un ancien secrets.h (à changer en prod).
+#if defined(USE_HMAC) && !defined(SENTINEL_HMAC_SECRET)
+#define SENTINEL_HMAC_SECRET "change-moi-cle-partagee-equipe-6"
+#endif
+
 // --- Broches ---
 const int PIN_DHT = 4;   // DHT22      sur GPIO 4  (température + humidité)
 const int PIN_PIR = 27;  // PIR HC-SR501 sur GPIO 27 (présence, sortie numérique)

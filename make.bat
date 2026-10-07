@@ -31,6 +31,9 @@ if "%1"=="security-fix"   goto securityfix
 if "%1"=="app"         goto app
 if "%1"=="start"       goto start
 if "%1"=="stop"        goto stop
+if "%1"=="flash-base"  goto flashbase
+if "%1"=="flash-leds"  goto flashleds
+if "%1"=="flash-full"  goto flashfull
 if "%1"=="test-ensemble"  goto testensemble
 if "%1"=="train"       goto train
 if "%1"=="detect"      goto detect
@@ -161,6 +164,33 @@ goto end
 %PY% scripts\launch_all.py --stop
 goto end
 
+REM --- Flash ESP32 : trouve pio automatiquement (PATH ou .platformio) ---
+:findpio
+set "PIO=pio"
+where pio >nul 2>&1 && goto :eof
+if exist "%USERPROFILE%\.platformio\penv\Scripts\pio.exe" set "PIO=%USERPROFILE%\.platformio\penv\Scripts\pio.exe" & goto :eof
+echo [X] PlatformIO introuvable. Installe l'extension PlatformIO dans VS Code,
+echo     ou : %PY% -m pip install platformio   puis reessaie.
+exit /b 1
+
+:flashbase
+call :findpio || goto end
+echo Flash ESP32 : firmware de base (capteurs + OLED)...
+"%PIO%" run -d firmware -e esp32dev-secrets -t upload
+goto end
+
+:flashleds
+call :findpio || goto end
+echo Flash ESP32 : capteurs + OLED + LEDs de statut...
+"%PIO%" run -d firmware -e esp32dev-secrets-leds -t upload
+goto end
+
+:flashfull
+call :findpio || goto end
+echo Flash ESP32 : COMPLET (capteurs + OLED-alertes + LEDs + HMAC)...
+"%PIO%" run -d firmware -e esp32dev-full -t upload
+goto end
+
 :testensemble
 %PY% -m pytest tests\test_ensemble.py -q
 goto end
@@ -210,6 +240,9 @@ echo   monitor-esp32      Lit le port serie de l'ESP32 (mesures en direct)
 echo   app                APPLI bureau : fenetre unique (analyse + dashboard + webcam)
 echo   start              Lance tout en fond + ouvre le cockpit dans le navigateur
 echo   stop               Arrete tout ce que `start`/`app` a lance
+echo   flash-base         Flashe l'ESP32 : capteurs + OLED (verifie le materiel)
+echo   flash-leds         Flashe l'ESP32 : capteurs + OLED + LEDs de statut
+echo   flash-full         Flashe l'ESP32 : COMPLET (OLED-alertes + LEDs + HMAC)
 echo   setup-2fa          Cree un compte dashboard (login + 2FA)
 echo   security-audit     Suis-je securise ? (secrets, auth, XSS, MQTT, API)
 echo   security-fix       Applique les correctifs de securite surs

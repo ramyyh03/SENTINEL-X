@@ -18,7 +18,7 @@ PIP := $(PY) -m pip
 DC  := docker compose -f docker-compose.dev.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap install check test test-full test-unit test-materiel check-materiel monitor-esp32 config-esp32 setup-2fa reset-db train-ensemble test-ensemble ollama-check security-audit security-fix app start stop run-all broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
+.PHONY: help bootstrap install check test test-full test-unit test-materiel check-materiel monitor-esp32 config-esp32 setup-2fa reset-db train-ensemble test-ensemble ollama-check security-audit security-fix app start stop flash-base flash-leds flash-full run-all broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
 
 bootstrap: ## 🧰 Machine neuve : installe les prérequis SYSTÈME (Python, Docker…) PUIS install
 	@bash scripts/bootstrap.sh
@@ -131,6 +131,15 @@ start: ## ▶️  UNE commande : lance tout en arrière-plan + ouvre le cockpit 
 
 stop: ## ⏹️  Arrête tout ce qui a été lancé par `make start`
 	@$(PY) scripts/launch_all.py --stop
+
+flash-base: ## 🔌 Flashe l'ESP32 : capteurs + OLED (vérifie le matériel)
+	@pio run -d firmware -e esp32dev-secrets -t upload
+
+flash-leds: ## 🔌 Flashe l'ESP32 : capteurs + OLED + LEDs de statut
+	@pio run -d firmware -e esp32dev-secrets-leds -t upload
+
+flash-full: ## 🔌 Flashe l'ESP32 : COMPLET (OLED-alertes + LEDs + HMAC)
+	@pio run -d firmware -e esp32dev-full -t upload
 
 test-ensemble: ## 🧫 Tests de l'ensemble 6.3
 	@$(PY) -m pytest tests/test_ensemble.py -q
