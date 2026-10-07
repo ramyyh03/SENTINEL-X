@@ -306,6 +306,10 @@ def _page_dashboard(alertes: list[dict]) -> str:
         if not contexte and details.get("persons_detected") is not None:
             contexte = f"{details['persons_detected']} personne(s) détectée(s)"
         contexte = contexte or ""
+        votes = details.get("model_votes")
+        if votes:  # votes des modèles (Brique 6.3) affichés en compact
+            contexte += " · <span style='color:#8b949e'>" + " ".join(
+                f"{k[:3]}:{v}" for k, v in votes.items()) + "</span>"
         lignes += (
             f"<tr>"
             f"<td>{a.get('timestamp', '')}</td>"

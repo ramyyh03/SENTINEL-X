@@ -102,11 +102,21 @@ def cmd_train() -> int:
 #  DÉTECTION (temps réel sur sentinel.db)
 # --------------------------------------------------------------------------- #
 def _traiter_lecture(detecteur: Detecteur, agregateur: Agregateur,
-                     buffer: deque, row: dict) -> None:
-    """Score une lecture, génère/agrège l'alerte, log et POST si anomalie."""
+                     buffer: deque, row: dict, ensemble=None) -> None:
+    """Score une lecture, génère/agrège l'alerte, log et POST si anomalie.
+
+    Si `ensemble` (Brique 6.3) est fourni, on l'utilise (4 modèles) ; sinon on
+    retombe sur le détecteur classique (IF+LOF, 27 features).
+    """
     buffer.append({k: row[k] for k in COLS})
     df = pd.DataFrame(list(buffer))
-    detection = detecteur.detecter(df)
+    if ensemble is not None:
+        detection = ensemble.scorer(row)
+        detection["threshold"] = ensemble.threshold
+        detection["triggered_features"] = [f"{k}={v}" for k, v in detection["model_votes"].items()]
+        detection["drift_sensor"] = None
+    else:
+        detection = detecteur.detecter(df)
 
     _append_log("predictions.log",
                 f"{row['timestamp']} score={detection['anomaly_score']} "
@@ -150,19 +160,29 @@ def cmd_detect(once: bool) -> int:
         log("ERREUR", Fore.RED, str(exc))
         return 1
 
+    # Brique 6.3 : si l'ensemble est entraîné, on l'utilise (4 modèles) en priorité.
+    ensemble = None
+    try:
+        from predictive.ensemble_detector import EnsembleDetector
+        ensemble = EnsembleDetector.charger()
+        log("OK", Fore.GREEN, "Ensemble 6.3 actif (IF + LOF + ECOD + Gradient Boosting)")
+    except Exception:
+        log("INFO", Fore.MAGENTA, "Ensemble 6.3 non entraîné → détecteur classique (make train-ensemble pour l'activer)")
+
     agregateur = Agregateur(
         min_interval_s=int(os.getenv("ALERT_MIN_INTERVAL", "60")),
         window_s=int(os.getenv("ALERT_WINDOW", "300")),
     )
     buffer: deque = deque(maxlen=BUFFER_MAX)
     dernier_id = 0
+    seuil = ensemble.threshold if ensemble else detecteur.threshold
     log("INFO", Fore.MAGENTA,
-        f"Détection démarrée (seuil={detecteur.threshold}, API={API_ENDPOINT}). Ctrl+C pour arrêter.")
+        f"Détection démarrée (seuil={seuil}, API={API_ENDPOINT}). Ctrl+C pour arrêter.")
 
     while True:
         for row in _lire_nouvelles_lignes(dernier_id):
             dernier_id = row["id"]
-            _traiter_lecture(detecteur, agregateur, buffer, row)
+            _traiter_lecture(detecteur, agregateur, buffer, row, ensemble)
         if once:
             break
         time.sleep(POLL_SECONDS)
