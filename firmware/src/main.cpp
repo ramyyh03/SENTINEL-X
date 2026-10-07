@@ -110,6 +110,7 @@ unsigned long alerteRecueMs = 0; // horodatage (millis) de réception de l'alert
 //  OLED : petit utilitaire d'affichage (jusqu'à 3 lignes)
 // ---------------------------------------------------------------------------
 void oledLignes(const char* l1, const char* l2 = "", const char* l3 = "") {
+  if (!oledPresent) return;   // pas d'écran initialisé -> ne pas écrire (évite un crash mémoire)
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
