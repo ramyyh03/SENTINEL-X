@@ -24,6 +24,8 @@ if "%1"=="run-all"     goto runall
 if "%1"=="api"         goto api
 if "%1"=="api-stop"    goto apistop
 if "%1"=="api-logs"    goto apilogs
+if "%1"=="train-ensemble" goto trainensemble
+if "%1"=="test-ensemble"  goto testensemble
 if "%1"=="train"       goto train
 if "%1"=="detect"      goto detect
 if "%1"=="replay"      goto replay
@@ -123,6 +125,14 @@ goto end
 
 :apilogs
 powershell -NoProfile -Command "Get-Content logs\api.log -Wait -Tail 20"
+goto end
+
+:trainensemble
+%PY% scripts\train_ensemble.py
+goto end
+
+:testensemble
+%PY% -m pytest tests\test_ensemble.py -q
 goto end
 
 :train

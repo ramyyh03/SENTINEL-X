@@ -18,7 +18,7 @@ PIP := $(PY) -m pip
 DC  := docker compose -f docker-compose.dev.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap install check test test-full test-unit test-materiel check-materiel monitor-esp32 config-esp32 setup-2fa reset-db run-all broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
+.PHONY: help bootstrap install check test test-full test-unit test-materiel check-materiel monitor-esp32 config-esp32 setup-2fa reset-db train-ensemble test-ensemble run-all broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
 
 bootstrap: ## 🧰 Machine neuve : installe les prérequis SYSTÈME (Python, Docker…) PUIS install
 	@bash scripts/bootstrap.sh
@@ -110,6 +110,12 @@ run-all: ## 🚀 Lance tout en arrière-plan (broker + API + ingestion + détect
 	@echo "✅ Système lancé. Dashboard : http://localhost:3000/dashboard"
 	@echo "   Capteurs : /live · Caméra : /camera (lance la vision à part : make detect-vision)"
 	@echo "   Arrêt : make api-stop broker-stop ; kill via logs/*.pid"
+
+train-ensemble: ## 🧠🔥 BRIQUE 6.3 : entraine l'ensemble hybride (IF+LOF+ECOD+GB) + metriques
+	@$(PY) scripts/train_ensemble.py
+
+test-ensemble: ## 🧫 Tests de l'ensemble 6.3
+	@$(PY) -m pytest tests/test_ensemble.py -q
 
 train: ## 🧠 BRIQUE 6 : génère les données + entraîne Forest/LOF + évalue
 	@test -x $(PY) || { echo "❌ Pas de venv — lance d'abord : make install"; exit 1; }

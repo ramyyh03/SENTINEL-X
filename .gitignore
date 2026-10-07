@@ -87,3 +87,4 @@ secrets.h
 docker/mosquitto/config/passwd
 
 *.srl
+data/synthetic_1000.csv
