@@ -31,9 +31,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request, send_file
+from flask import (Flask, jsonify, redirect, request, send_file, session,
+                   url_for)
 
 from api.alert_store import AlertStore
+from api import auth
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
@@ -123,7 +125,29 @@ _COULEURS = {
 def create_app(store: AlertStore | None = None) -> Flask:
     """Fabrique l'application Flask (factory → facile à tester via test_client)."""
     app = Flask(__name__)
+    app.secret_key = _secret_key()  # nécessaire aux sessions (login)
     magasin = store or AlertStore()
+
+    @app.get("/login")
+    def login():
+        return _page_login()
+
+    @app.post("/login")
+    def login_post():
+        u = request.form.get("username", "")
+        p = request.form.get("password", "")
+        code = request.form.get("code", "")
+        if auth.verifier(u, p, code):
+            session["user"] = u
+            logger.info("Connexion dashboard réussie : %s", u)
+            return redirect(url_for("dashboard"))
+        logger.warning("Connexion dashboard refusée : %s", u)
+        return _page_login(erreur="Identifiant, mot de passe ou code 2FA invalide."), 401
+
+    @app.get("/logout")
+    def logout():
+        session.clear()
+        return redirect(url_for("login"))
 
     @app.post("/api/v1/alerts")
     def recevoir_alerte():
@@ -156,18 +180,22 @@ def create_app(store: AlertStore | None = None) -> Flask:
         return jsonify({"status": "ok", "alerts_count": magasin.count(), "uptime": uptime})
 
     @app.get("/dashboard")
+    @auth.login_required
     def dashboard():
         return _page_dashboard(magasin.recent(50))
 
     @app.get("/live")
+    @auth.login_required
     def live():
         return _page_live(_lire_capteurs(magasin.db_path, 20))
 
     @app.get("/camera")
+    @auth.login_required
     def camera():
         return _page_camera()
 
     @app.get("/camera/frame")
+    @auth.login_required
     def camera_frame():
         if LATEST_FRAME.exists():
             return send_file(LATEST_FRAME, mimetype="image/jpeg")
@@ -177,6 +205,56 @@ def create_app(store: AlertStore | None = None) -> Flask:
 
 
 LATEST_FRAME = PROJECT_ROOT / "data" / "captures" / "latest.jpg"
+
+
+def _secret_key() -> str:
+    """Clé secrète des sessions : via .env, sinon générée et persistée localement."""
+    import secrets as _secrets
+    key = os.getenv("FLASK_SECRET_KEY")
+    if key:
+        return key
+    f = PROJECT_ROOT / "data" / ".flask_secret"
+    try:
+        if f.exists():
+            return f.read_text(encoding="utf-8").strip()
+        key = _secrets.token_hex(32)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(key, encoding="utf-8")
+        return key
+    except OSError:
+        return _secrets.token_hex(32)
+
+
+def _page_login(erreur: str = "") -> str:
+    """Page de connexion : identifiant + mot de passe + code 2FA (TOTP)."""
+    msg = f'<div class="err">{erreur}</div>' if erreur else ""
+    return f"""<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SENTINEL-X — Connexion</title>
+<style>
+  body {{ font-family: system-ui, sans-serif; background:#1b1f23; color:#e6e6e6; margin:0;
+         display:flex; min-height:100vh; align-items:center; justify-content:center; }}
+  form {{ background:#24292e; border:1px solid #30363d; border-radius:12px; padding:28px; width:300px; }}
+  h1 {{ font-size:18px; margin:0 0 4px; }} .s {{ color:#8b949e; font-size:12px; margin-bottom:18px; }}
+  label {{ display:block; font-size:12px; color:#adbac7; margin:12px 0 4px; }}
+  input {{ width:100%; box-sizing:border-box; padding:9px; border-radius:6px; border:1px solid #30363d;
+          background:#1b1f23; color:#e6e6e6; font-size:14px; }}
+  button {{ width:100%; margin-top:18px; padding:10px; border:0; border-radius:6px; background:#238636;
+           color:#fff; font-weight:700; font-size:14px; cursor:pointer; }}
+  .err {{ background:#c0392b; color:#fff; padding:8px; border-radius:6px; font-size:13px; margin-bottom:12px; }}
+</style></head>
+<body>
+  <form method="post" action="/login">
+    <h1>🛡️ SENTINEL-X</h1>
+    <div class="s">Connexion sécurisée (mot de passe + code Authenticator)</div>
+    {msg}
+    <label>Identifiant</label><input name="username" autofocus required>
+    <label>Mot de passe</label><input name="password" type="password" required>
+    <label>Code 2FA (6 chiffres)</label><input name="code" inputmode="numeric" pattern="[0-9]*" required>
+    <button type="submit">Se connecter</button>
+  </form>
+</body></html>"""
 
 
 def _lire_capteurs(db_path, limit: int = 20) -> list[dict]:
@@ -235,7 +313,7 @@ def _page_dashboard(alertes: list[dict]) -> str:
 </style></head>
 <body>
   <h1>🛡️ SENTINEL-X — Dashboard des alertes</h1>
-  <div class="sub">{len(alertes)} dernière(s) alerte(s) · rafraîchi toutes les 5 s · {maj} · <a href="/live" style="color:#58a6ff;text-decoration:none">→ capteurs</a> · <a href="/camera" style="color:#58a6ff;text-decoration:none">→ caméra</a></div>
+  <div class="sub">{len(alertes)} dernière(s) alerte(s) · rafraîchi toutes les 5 s · {maj} · <a href="/live" style="color:#58a6ff;text-decoration:none">→ capteurs</a> · <a href="/camera" style="color:#58a6ff;text-decoration:none">→ caméra</a> · <a href="/logout" style="color:#8b949e;text-decoration:none">déconnexion</a></div>
   <table>
     <thead><tr><th>Timestamp</th><th>Source</th><th>Type</th><th>Confiance</th><th>Sévérité</th><th>Détails</th></tr></thead>
     <tbody>{lignes}</tbody>

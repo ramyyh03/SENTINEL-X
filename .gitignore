@@ -28,6 +28,10 @@ env/
 data/captures/
 RAPPORT-MATERIEL.md
 
+# --- Auth dashboard (comptes 2FA + clé de session — JAMAIS en Git) ---
+data/dashboard_users.json
+data/.flask_secret
+
 # --- Base de données (créée au runtime) ---
 sentinel.db
 *.sqlite

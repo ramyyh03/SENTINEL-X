@@ -32,3 +32,7 @@ flask>=3.0.0
 
 # --- Détection ESP32 (port série) ---
 pyserial>=3.5
+
+# --- Authentification dashboard (2FA/TOTP local) ---
+pyotp>=2.9.0
+qrcode>=7.4

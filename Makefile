@@ -18,7 +18,7 @@ PIP := $(PY) -m pip
 DC  := docker compose -f docker-compose.dev.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap install check test test-full test-materiel check-materiel monitor-esp32 reset-db run-all broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
+.PHONY: help bootstrap install check test test-full test-materiel check-materiel monitor-esp32 setup-2fa reset-db run-all broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
 
 bootstrap: ## 🧰 Machine neuve : installe les prérequis SYSTÈME (Python, Docker…) PUIS install
 	@bash scripts/bootstrap.sh
@@ -88,6 +88,9 @@ api-logs: ## 🌐 BRIQUE 7 : affiche les logs de l'API en continu
 
 simulate: ## Lance le simulateur ESP32 (10 mesures sur sentinel/sensors)
 	@$(PY) simulate/fake_sensors_esp32.py --simulate
+
+setup-2fa: ## 🔐 Crée un compte dashboard protégé par mot de passe + 2FA (Authenticator)
+	@$(PY) scripts/setup_2fa.py
 
 reset-db: ## 🧹 Vide la base (enlève les données synthétiques → que du réel ensuite)
 	@$(PY) scripts/reset_db.py
