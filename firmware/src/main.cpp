@@ -78,6 +78,7 @@ const unsigned long MQTT_RETRY_MS = 5000;  // délai entre deux tentatives de co
 
 // --- Objets matériels / réseau ---
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
+bool oledPresent = false;   // vrai si l'OLED répond en I²C (0x3C ou 0x3D)
 DHT dht(PIN_DHT, DHT22);
 #ifdef DEV_PLAIN_MQTT
 WiFiClient wifiClient;         // DEV : pas de TLS
@@ -383,6 +384,7 @@ void afficherSerie() {
 }
 
 void afficherOLED() {
+  if (!oledPresent) return;   // pas d'écran : on ne tente rien (évite tout blocage I²C)
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
@@ -458,11 +460,16 @@ void setup() {
   Serial.begin(115200);
   Wire.begin(21, 22);  // I²C : SDA=21, SCL=22
 
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println("OLED introuvable");
-    while (true) delay(1000);
+  // Essaie les deux adresses I²C usuelles du SSD1306 (0x3C puis 0x3D).
+  // Si l'OLED ne répond pas : on NE BLOQUE PAS — capteurs/WiFi/MQTT/LEDs continuent.
+  oledPresent = display.begin(SSD1306_SWITCHCAPVCC, 0x3C)
+             || display.begin(SSD1306_SWITCHCAPVCC, 0x3D);
+  if (oledPresent) {
+    display.setTextColor(SSD1306_WHITE);
+    Serial.println("OLED detectee et initialisee.");
+  } else {
+    Serial.println("OLED introuvable (I2C 0x3C/0x3D) - verifie SDA=21/SCL=22/3V3/GND. On continue sans ecran.");
   }
-  display.setTextColor(SSD1306_WHITE);
 
   dht.begin();
   pinMode(PIN_PIR, INPUT);     // PIR : sortie numérique
