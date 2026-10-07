@@ -198,10 +198,20 @@ def create_app(store: AlertStore | None = None) -> Flask:
     def dashboard():
         return _page_dashboard(magasin.recent(50))
 
+    @app.get("/api/v1/alerts-rows")
+    @auth.login_required
+    def alerts_rows():
+        return _lignes_alertes(magasin.recent(50))
+
     @app.get("/live")
     @auth.login_required
     def live():
         return _page_live(_lire_capteurs(magasin.db_path, 20))
+
+    @app.get("/api/v1/live-body")
+    @auth.login_required
+    def live_body():
+        return _corps_live(_lire_capteurs(magasin.db_path, 20))
 
     @app.get("/camera")
     @auth.login_required
@@ -559,8 +569,8 @@ def _page_security() -> str:
 </body></html>"""
 
 
-def _page_dashboard(alertes: list[dict]) -> str:
-    """Construit la page HTML du dashboard (CSS inline, auto-refresh 5 s)."""
+def _lignes_alertes(alertes: list[dict]) -> str:
+    """Construit les lignes <tr> du tableau d'alertes (échappées anti-XSS)."""
     lignes = ""
     for a in alertes:
         sev = _severite(a)
@@ -588,12 +598,16 @@ def _page_dashboard(alertes: list[dict]) -> str:
         )
     if not lignes:
         lignes = "<tr><td colspan='6' style='text-align:center;color:#888'>Aucune alerte pour l'instant</td></tr>"
+    return lignes
 
+
+def _page_dashboard(alertes: list[dict]) -> str:
+    """Construit la page HTML du dashboard (mise à jour fluide en AJAX, sans reload)."""
+    lignes = _lignes_alertes(alertes)
     maj = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
     return f"""<!doctype html>
 <html lang="fr"><head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="5">
 <title>SENTINEL-X — Alertes</title>
 <style>
   body {{ font-family: system-ui, sans-serif; background:#1b1f23; color:#e6e6e6; margin:0; padding:24px; }}
@@ -608,7 +622,7 @@ def _page_dashboard(alertes: list[dict]) -> str:
 </style></head>
 <body>
   <h1>🛡️ SENTINEL-X — Dashboard des alertes</h1>
-  <div class="sub">{len(alertes)} dernière(s) alerte(s) · rafraîchi toutes les 5 s · {maj} · <a href="/live" style="color:#58a6ff;text-decoration:none">→ capteurs</a> · <a href="/camera" style="color:#58a6ff;text-decoration:none">→ caméra</a> · <a href="/security" style="color:#58a6ff;text-decoration:none">→ sécurité</a> · <a href="/logout" style="color:#8b949e;text-decoration:none">déconnexion</a></div>
+  <div class="sub"><span id="maj">{maj}</span> · rafraîchi en continu · <a href="/live" style="color:#58a6ff;text-decoration:none">→ capteurs</a> · <a href="/camera" style="color:#58a6ff;text-decoration:none">→ caméra</a> · <a href="/security" style="color:#58a6ff;text-decoration:none">→ sécurité</a> · <a href="/logout" style="color:#8b949e;text-decoration:none">déconnexion</a></div>
   <div style="margin:10px 0;font-size:13px">🧪 <b>Simulateur</b> :
     <button onclick="inj('gas_spike')">Fuite gaz</button>
     <button onclick="inj('temp_jump')">Surchauffe</button>
@@ -621,54 +635,64 @@ def _page_dashboard(alertes: list[dict]) -> str:
     <div id="rep" style="margin-top:8px;color:#adbac7"></div>
   </div>
 <script>
-function inj(t){{fetch('/api/v1/simulate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{type:t}})}}).then(function(){{location.reload();}});}}
+// Mise à jour FLUIDE du tableau (sans recharger la page -> ne vide plus les champs).
+function majAlertes(){{
+  fetch('/api/v1/alerts-rows').then(function(r){{return r.text();}}).then(function(h){{
+    document.getElementById('corps').innerHTML = h;
+    document.getElementById('maj').textContent = new Date().toLocaleTimeString();
+  }}).catch(function(){{}});
+}}
+function inj(t){{fetch('/api/v1/simulate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{type:t}})}}).then(majAlertes);}}
 fetch('/api/v1/ollama-status').then(function(r){{return r.json();}}).then(function(d){{document.getElementById('ostat').textContent=d.online?'🟢 Ollama en ligne':'🔴 Ollama hors ligne';}});
 function ask(){{var q=document.getElementById('q').value;document.getElementById('rep').textContent='…';fetch('/api/v1/ollama',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{question:q}})}}).then(function(r){{return r.json();}}).then(function(d){{document.getElementById('rep').textContent=d.answer||('⚠️ '+(d.error||'')+' '+(d.suggestion||''));}});}}
+setInterval(majAlertes, 5000);   // rafraîchit juste les données, pas la page
 </script>
   <table>
     <thead><tr><th>Timestamp</th><th>Source</th><th>Type</th><th>Confiance</th><th>Sévérité</th><th>Détails</th></tr></thead>
-    <tbody>{lignes}</tbody>
+    <tbody id="corps">{lignes}</tbody>
   </table>
 </body></html>"""
 
 
-def _page_live(mesures: list[dict]) -> str:
-    """Page des mesures capteurs EN DIRECT (temp/humidité/gaz/présence), refresh 3 s."""
-    maj = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+def _corps_live(mesures: list[dict]) -> str:
+    """Construit le corps (cartes + tableau) de la page capteurs en direct."""
     if not mesures:
-        corps = ("<p style='color:#8b949e'>Aucune mesure pour l'instant. "
-                 "Lance la Brique 3 (ESP32 ou simulateur) → les valeurs s'afficheront ici.</p>")
-    else:
-        d = mesures[0]  # mesure la plus récente
-        presence = int(d.get("presence") or 0)
-        gaz = float(d.get("gas") or 0)
-        # code couleur (comme l'OLED) : présence rouge, gaz élevé orange
-        c_pres = "#c0392b" if presence else "#27ae60"
-        c_gaz = "#e67e22" if gaz >= 1000 else "#58a6ff"
-        cartes = (
-            f"<div class='grid'>"
-            f"<div class='card'><div class='k'>Température</div><div class='v'>{html.escape(str(d.get('temp','--')))} °C</div></div>"
-            f"<div class='card'><div class='k'>Humidité</div><div class='v'>{html.escape(str(d.get('humidity','--')))} %</div></div>"
-            f"<div class='card'><div class='k'>Gaz (MQ-2)</div><div class='v' style='color:{c_gaz}'>{int(gaz)}</div></div>"
-            f"<div class='card'><div class='k'>Présence (PIR)</div><div class='v' style='color:{c_pres}'>"
-            f"{'🚶 OUI' if presence else '— non'}</div></div>"
-            f"</div>"
-        )
-        rangs = ""
-        for m in mesures:
-            pres = "🚶" if int(m.get("presence") or 0) else "—"
-            rangs += (f"<tr><td>{html.escape(str(m.get('timestamp','')))}</td>"
-                      f"<td>{html.escape(str(m.get('temp','')))}</td>"
-                      f"<td>{html.escape(str(m.get('humidity','')))}</td>"
-                      f"<td>{int(float(m.get('gas') or 0))}</td>"
-                      f"<td style='text-align:center'>{pres}</td></tr>")
-        corps = cartes + (
-            "<table><thead><tr><th>Timestamp</th><th>Temp °C</th><th>Humi %</th>"
-            "<th>Gaz</th><th>Présence</th></tr></thead><tbody>" + rangs + "</tbody></table>")
+        return ("<p style='color:#8b949e'>Aucune mesure pour l'instant. "
+                "Lance la Brique 3 (ESP32 ou simulateur) → les valeurs s'afficheront ici.</p>")
+    d = mesures[0]  # mesure la plus récente
+    presence = int(d.get("presence") or 0)
+    gaz = float(d.get("gas") or 0)
+    # code couleur (comme l'OLED) : présence rouge, gaz élevé orange
+    c_pres = "#c0392b" if presence else "#27ae60"
+    c_gaz = "#e67e22" if gaz >= 1000 else "#58a6ff"
+    cartes = (
+        f"<div class='grid'>"
+        f"<div class='card'><div class='k'>Température</div><div class='v'>{html.escape(str(d.get('temp','--')))} °C</div></div>"
+        f"<div class='card'><div class='k'>Humidité</div><div class='v'>{html.escape(str(d.get('humidity','--')))} %</div></div>"
+        f"<div class='card'><div class='k'>Gaz (MQ-2)</div><div class='v' style='color:{c_gaz}'>{int(gaz)}</div></div>"
+        f"<div class='card'><div class='k'>Présence (PIR)</div><div class='v' style='color:{c_pres}'>"
+        f"{'🚶 OUI' if presence else '— non'}</div></div>"
+        f"</div>"
+    )
+    rangs = ""
+    for m in mesures:
+        pres = "🚶" if int(m.get("presence") or 0) else "—"
+        rangs += (f"<tr><td>{html.escape(str(m.get('timestamp','')))}</td>"
+                  f"<td>{html.escape(str(m.get('temp','')))}</td>"
+                  f"<td>{html.escape(str(m.get('humidity','')))}</td>"
+                  f"<td>{int(float(m.get('gas') or 0))}</td>"
+                  f"<td style='text-align:center'>{pres}</td></tr>")
+    return cartes + (
+        "<table><thead><tr><th>Timestamp</th><th>Temp °C</th><th>Humi %</th>"
+        "<th>Gaz</th><th>Présence</th></tr></thead><tbody>" + rangs + "</tbody></table>")
 
+
+def _page_live(mesures: list[dict]) -> str:
+    """Page capteurs en direct — mise à jour fluide en AJAX (sans reload)."""
+    maj = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
     return f"""<!doctype html>
 <html lang="fr"><head>
-<meta charset="utf-8"><meta http-equiv="refresh" content="3">
+<meta charset="utf-8">
 <title>SENTINEL-X — Capteurs en direct</title>
 <style>
   body {{ font-family: system-ui, sans-serif; background:#1b1f23; color:#e6e6e6; margin:0; padding:24px; }}
@@ -685,8 +709,17 @@ def _page_live(mesures: list[dict]) -> str:
 </style></head>
 <body>
   <h1>🛡️ SENTINEL-X — Capteurs en direct</h1>
-  <div class="sub">Rafraîchi toutes les 3 s · {maj} · <a href="/dashboard">→ alertes</a> · <a href="/camera">→ caméra</a></div>
-  {corps}
+  <div class="sub"><span id="maj">{maj}</span> · rafraîchi en continu · <a href="/dashboard">→ alertes</a> · <a href="/camera">→ caméra</a></div>
+  <div id="corps">{_corps_live(mesures)}</div>
+<script>
+  function majLive(){{
+    fetch('/api/v1/live-body').then(function(r){{return r.text();}}).then(function(h){{
+      document.getElementById('corps').innerHTML = h;
+      document.getElementById('maj').textContent = new Date().toLocaleTimeString();
+    }}).catch(function(){{}});
+  }}
+  setInterval(majLive, 3000);
+</script>
 </body></html>"""
 
 
