@@ -28,6 +28,7 @@ import time
 from collections import defaultdict, deque
 from contextlib import closing
 from datetime import datetime, timezone
+from html import escape
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -67,6 +68,15 @@ logging.basicConfig(
 logger = logging.getLogger("sentinel-api")
 
 _DEMARRAGE = time.monotonic()
+
+
+def _e(valeur: object) -> str:
+    """Neutralise une valeur avant de l'écrire dans une page HTML (anti-XSS).
+
+    Tout ce qui vient de l'extérieur (alerte POSTée, mesure MQTT) est du TEXTE,
+    jamais du code : `<script>` devient `&lt;script&gt;` et s'affiche tel quel.
+    """
+    return escape(str(valeur), quote=True)
 _requetes_par_ip: dict[str, deque] = defaultdict(deque)
 
 
@@ -227,7 +237,7 @@ def _secret_key() -> str:
 
 def _page_login(erreur: str = "") -> str:
     """Page de connexion : identifiant + mot de passe + code 2FA (TOTP)."""
-    msg = f'<div class="err">{erreur}</div>' if erreur else ""
+    msg = f'<div class="err">{_e(erreur)}</div>' if erreur else ""
     return f"""<!doctype html>
 <html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -283,12 +293,12 @@ def _page_dashboard(alertes: list[dict]) -> str:
         contexte = contexte or ""
         lignes += (
             f"<tr>"
-            f"<td>{a.get('timestamp', '')}</td>"
-            f"<td>{a.get('source', '')}</td>"
-            f"<td>{a.get('type', '')}</td>"
-            f"<td style='text-align:center'>{a.get('confidence', '')}</td>"
-            f"<td><span class='badge' style='background:{couleur}'>{sev}</span></td>"
-            f"<td class='details'>{contexte}</td>"
+            f"<td>{_e(a.get('timestamp', ''))}</td>"
+            f"<td>{_e(a.get('source', ''))}</td>"
+            f"<td>{_e(a.get('type', ''))}</td>"
+            f"<td style='text-align:center'>{_e(a.get('confidence', ''))}</td>"
+            f"<td><span class='badge' style='background:{couleur}'>{_e(sev)}</span></td>"
+            f"<td class='details'>{_e(contexte)}</td>"
             f"</tr>"
         )
     if not lignes:
@@ -336,8 +346,8 @@ def _page_live(mesures: list[dict]) -> str:
         c_gaz = "#e67e22" if gaz >= 1000 else "#58a6ff"
         cartes = (
             f"<div class='grid'>"
-            f"<div class='card'><div class='k'>Température</div><div class='v'>{d.get('temp','--')} °C</div></div>"
-            f"<div class='card'><div class='k'>Humidité</div><div class='v'>{d.get('humidity','--')} %</div></div>"
+            f"<div class='card'><div class='k'>Température</div><div class='v'>{_e(d.get('temp','--'))} °C</div></div>"
+            f"<div class='card'><div class='k'>Humidité</div><div class='v'>{_e(d.get('humidity','--'))} %</div></div>"
             f"<div class='card'><div class='k'>Gaz (MQ-2)</div><div class='v' style='color:{c_gaz}'>{int(gaz)}</div></div>"
             f"<div class='card'><div class='k'>Présence (PIR)</div><div class='v' style='color:{c_pres}'>"
             f"{'🚶 OUI' if presence else '— non'}</div></div>"
@@ -346,8 +356,8 @@ def _page_live(mesures: list[dict]) -> str:
         rangs = ""
         for m in mesures:
             pres = "🚶" if int(m.get("presence") or 0) else "—"
-            rangs += (f"<tr><td>{m.get('timestamp','')}</td><td>{m.get('temp','')}</td>"
-                      f"<td>{m.get('humidity','')}</td><td>{int(float(m.get('gas') or 0))}</td>"
+            rangs += (f"<tr><td>{_e(m.get('timestamp',''))}</td><td>{_e(m.get('temp',''))}</td>"
+                      f"<td>{_e(m.get('humidity',''))}</td><td>{int(float(m.get('gas') or 0))}</td>"
                       f"<td style='text-align:center'>{pres}</td></tr>")
         corps = cartes + (
             "<table><thead><tr><th>Timestamp</th><th>Temp °C</th><th>Humi %</th>"
