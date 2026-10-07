@@ -30,6 +30,24 @@
 - `.env.example` propose un identifiant et un mot de passe par défaut : à remplacer par des valeurs propres à l'équipe.
 - Un seul compte MQTT pour tous les clients : pas encore de séparation des droits.
 
+## Signature HMAC anti-injection (anti-falsification des messages)
+Même sur un broker ouvert, un message falsifié est rejeté grâce à une clé
+**partagée** entre l'ESP32 et le serveur.
+
+- **Principe** : chaque message porte un champ `sig` = HMAC-SHA256 d'une chaîne
+  canonique (`temp|humidity|gas|presence|timestamp`). Le serveur recalcule la
+  signature avec la clé secrète ; si elle ne correspond pas → message rejeté.
+  L'attaquant ignore la clé, il ne peut donc pas forger un message accepté.
+- **Rétrocompatible** : sans `MQTT_HMAC_SECRET` dans `.env`, rien ne change
+  (démo actuelle intacte). Un faux message **signé** est toujours bloqué ;
+  un message **non signé** n'est bloqué qu'en mode strict (`MQTT_HMAC_STRICT=true`).
+- **Activation** :
+  1. `.env` du PC : `MQTT_HMAC_SECRET=<clé>` (+ `MQTT_HMAC_STRICT=true` en prod).
+  2. `firmware/include/secrets.h` : `#define SENTINEL_HMAC_SECRET "<même clé>"`.
+  3. Flasher : `pio run -e esp32dev-secrets-hmac -t upload`.
+- **Code** : `security/message_signing.py` (serveur) · bloc `#ifdef USE_HMAC`
+  dans `firmware/src/main.cpp` (ESP32). Vérif rapide : `make security-audit`.
+
 ## À faire
 - Valider le firmware MQTTS sur la carte réelle (compilation vérifiée, test matériel à faire).
 - Comptes MQTT séparés avec ACL : ESP32 en écriture seule, collecteur en lecture seule.

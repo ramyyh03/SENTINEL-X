@@ -158,6 +158,27 @@ def controle_mqtt_chiffre() -> Constat:
         auto_corrigeable=False)
 
 
+def controle_hmac_injection() -> Constat:
+    """Faille 4bis : sans HMAC, un faux message MQTT est accepté (injection)."""
+    secret = os.getenv("MQTT_HMAC_SECRET") or ""
+    strict = os.getenv("MQTT_HMAC_STRICT", "false").lower() == "true"
+    if secret and strict:
+        return Constat("Anti-injection HMAC", True, "OK",
+                       "HMAC strict : tout message non signé ou falsifié est rejeté.", "")
+    if secret:
+        return Constat(
+            "Anti-injection HMAC", True, "OK",
+            "HMAC actif (souple) : un faux message signé est rejeté ; "
+            "les messages non signés restent tolérés.", "")
+    return Constat(
+        "Anti-injection HMAC", False, "MEDIUM",
+        "Pas de clé HMAC : n'importe qui sur le réseau peut injecter un faux "
+        "message capteur (cf. REDTEAM-PLAYBOOK, mode --inject).",
+        "Définir MQTT_HMAC_SECRET dans .env + flasher l'ESP32 avec -DUSE_HMAC "
+        "(même clé dans secrets.h)",
+        auto_corrigeable=False)
+
+
 def controle_api_exposee() -> Constat:
     """Faille 5 : API exposée LAN + endpoint d'alertes sans auth."""
     host = os.getenv("API_HOST", "127.0.0.1").split("#")[0].strip()
@@ -195,6 +216,7 @@ def lancer_controles() -> list[Constat]:
         controle_dashboard_auth(),
         controle_xss(),
         controle_mqtt_chiffre(),
+        controle_hmac_injection(),
         controle_api_exposee(),
         controle_cle_session(),
     ]

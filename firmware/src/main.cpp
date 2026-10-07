@@ -28,6 +28,9 @@
 #include <PubSubClient.h>     // knolleary — client MQTT
 #include <ArduinoJson.h>      // bblanchon — sérialisation JSON (v7)
 #include <Preferences.h>      // stockage persistant (IP du broker) en flash NVS
+#ifdef USE_HMAC
+#include "mbedtls/md.h"       // HMAC-SHA256 (anti-injection) — actif si -DUSE_HMAC
+#endif
 #include <time.h>
 #include "ca_cert.h"          // certificat PUBLIC de la CA interne (CA_CERT)
 #ifdef USE_SECRETS
@@ -263,17 +266,49 @@ void assurerMQTT() {
 #endif
 }
 
+#ifdef USE_HMAC
+// Calcule la signature HMAC-SHA256 (hex) d'un message, avec la clé partagée.
+// Le format signé DOIT être identique à security/message_signing.py :
+//   temp|humidity|gas|presence|timestamp   (temp/humidity à 1 décimale)
+void signerMessage(float temp, float hum, int gas, int pres,
+                   const char* ts, char* sigHex, size_t sigLen) {
+  char canonique[160];
+  snprintf(canonique, sizeof(canonique), "%.1f|%.1f|%d|%d|%s",
+           temp, hum, gas, pres, ts);
+
+  uint8_t hmac[32];
+  const mbedtls_md_info_t* info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+  mbedtls_md_hmac(info,
+                  (const uint8_t*)SENTINEL_HMAC_SECRET, strlen(SENTINEL_HMAC_SECRET),
+                  (const uint8_t*)canonique, strlen(canonique), hmac);
+
+  for (int i = 0; i < 32 && (size_t)(i * 2 + 2) < sigLen; i++)
+    snprintf(sigHex + i * 2, 3, "%02x", hmac[i]);
+}
+#endif
+
 void publierMesure() {
   // Format EXACT attendu par le client Python (Brique 3) :
   // {temp, humidity, gas, presence, timestamp}
+  String tsStr = horodatageISO();      // conservé vivant (String, pas un temporaire)
+  const char* ts = tsStr.c_str();
+  int presenceInt = presence ? 1 : 0;
+
   JsonDocument doc;
   doc["temp"]      = temperature;
   doc["humidity"]  = humidite;
   doc["gas"]       = gaz;              // MQ-2 : valeur brute ADC (0..4095)
-  doc["presence"]  = presence ? 1 : 0; // PIR  : 1 = présence, 0 = rien
-  doc["timestamp"] = horodatageISO();
+  doc["presence"]  = presenceInt;      // PIR  : 1 = présence, 0 = rien
+  doc["timestamp"] = ts;
 
-  char payload[192];
+#ifdef USE_HMAC
+  // Signature anti-injection : le serveur rejettera tout faux message.
+  char sigHex[65] = "";
+  signerMessage(temperature, humidite, gaz, presenceInt, ts, sigHex, sizeof(sigHex));
+  doc["sig"] = sigHex;
+#endif
+
+  char payload[256];
   size_t n = serializeJson(doc, payload);
   if (mqtt.publish(MQTT_TOPIC, payload, n))
     Serial.printf("MQTT → %s : %s\n", MQTT_TOPIC, payload);

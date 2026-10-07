@@ -30,6 +30,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from predictive.collector import SQLiteCollector  # noqa: E402 (après ajustement sys.path)
 from predictive.sensor_health import SensorHealthMonitor  # noqa: E402
+from security.message_signing import CHAMP_SIGNATURE, verifier  # noqa: E402
 
 # Surveillance santé des capteurs (Brique 6.2) — partagée entre les messages
 _health_monitor = SensorHealthMonitor()
@@ -80,6 +81,11 @@ def read_config() -> dict[str, Any]:
         "password": os.getenv("MQTT_PASSWORD") or None,
         "topic": os.getenv("MQTT_TOPIC", DEFAULT_TOPIC),
         "ca_cert": os.getenv("MQTT_CA_CERT", str(PROJECT_ROOT / "docker/mosquitto/certs/ca.crt")),
+        # Signature HMAC (anti-injection). Vide = désactivé (rétrocompatible).
+        "hmac_secret": os.getenv("MQTT_HMAC_SECRET") or None,
+        # strict=true : un message SANS signature est rejeté (prod, tous les ESP32 signent).
+        # strict=false (défaut) : message sans sig toléré ; message MAL signé toujours rejeté.
+        "hmac_strict": os.getenv("MQTT_HMAC_STRICT", "false").lower() == "true",
     }
 
 
@@ -125,6 +131,29 @@ def on_disconnect(client: mqtt.Client, userdata: Any, *args: Any) -> None:
     log("WARN", Fore.YELLOW, "Déconnecté — tentative de reconnexion automatique…")
 
 
+def _signature_valide(data: dict[str, Any], userdata: Any) -> bool:
+    """Contrôle la signature HMAC du message. Vrai = accepté.
+
+    - Pas de secret configuré → signature non vérifiée (démo, rétrocompatible).
+    - Signature PRÉSENTE mais fausse → toujours rejetée (= injection bloquée).
+    - Signature ABSENTE → rejetée seulement en mode strict.
+    """
+    secret = userdata.get("hmac_secret")
+    if not secret:
+        return True
+    sig = data.get(CHAMP_SIGNATURE)
+    if not sig:
+        if userdata.get("hmac_strict"):
+            log("BLOQUÉ", Fore.RED, "Message SANS signature rejeté (mode strict)")
+            return False
+        log("WARN", Fore.YELLOW, "Message sans signature accepté (mode souple)")
+        return True
+    if not verifier(data, sig, secret):
+        log("BLOQUÉ", Fore.RED, "🚨 Signature INVALIDE — injection falsifiée bloquée")
+        return False
+    return True
+
+
 def on_message(client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage) -> None:
     """Appelé à chaque message : parse, valide et affiche la mesure."""
     try:
@@ -136,6 +165,10 @@ def on_message(client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage) -> Non
     errors = validate_payload(data)
     if errors:
         log("WARN", Fore.YELLOW, f"Message incomplet: {', '.join(errors)} → {data}")
+        return
+
+    # Anti-injection HMAC : rejette tout message falsifié (sig absente/invalide).
+    if not _signature_valide(data, userdata):
         return
 
     presence = "👤 présence" if data["presence"] else "— vide"
@@ -173,7 +206,13 @@ def main() -> int:
         return 1
 
     client = make_client()
-    client.user_data_set({"topic": config["topic"], "collector": collector})
+    client.user_data_set({
+        "topic": config["topic"], "collector": collector,
+        "hmac_secret": config["hmac_secret"], "hmac_strict": config["hmac_strict"],
+    })
+    if config["hmac_secret"]:
+        mode = "STRICT" if config["hmac_strict"] else "souple"
+        log("OK", Fore.GREEN, f"Signature HMAC active (mode {mode}) — injection non signée détectée")
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
     client.on_message = on_message
