@@ -32,8 +32,6 @@
 #include "mbedtls/md.h"       // HMAC-SHA256 (anti-injection) — actif si -DUSE_HMAC
 #endif
 #include <time.h>
-#include "soc/soc.h"            // registres SOC (désactivation du brownout)
-#include "soc/rtc_cntl_reg.h"   // RTC_CNTL_BROWN_OUT_REG
 #include "ca_cert.h"          // certificat PUBLIC de la CA interne (CA_CERT)
 #ifdef USE_SECRETS
 #include "secrets.h"          // config EN DUR (WiFi + IP broker) — ni portail ni téléphone
@@ -459,11 +457,9 @@ void majStatutLeds() {
 //  setup / loop
 // ---------------------------------------------------------------------------
 void setup() {
-  // Désactive le reset automatique sur brownout : évite le redémarrage en boucle
-  // quand l'alimentation est juste (WiFi + MQ-2 + LEDs). PALLIATIF : le vrai
-  // remède reste une alim 5V solide (bon câble, MQ-2 sur 5V).
-  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
-
+  // NB : on GARDE le détecteur de brownout actif (il protège la flash). Si la
+  // carte reset/plante au démarrage du WiFi -> c'est un manque de courant :
+  // alim 5V solide (bon câble/chargeur 2A), MQ-2 sur 5V, LEDs avec résistances.
   Serial.begin(115200);
   delay(300);
   Wire.begin(21, 22);  // I²C : SDA=21, SCL=22
