@@ -88,3 +88,7 @@ docker/mosquitto/config/passwd
 
 *.srl
 data/synthetic_1000.csv
+
+# --- Red team / pentest croise (LOCAL uniquement, jamais distribue) ---
+REDTEAM-PLAYBOOK.md
+scripts/redteam_mqtt.py
