@@ -384,8 +384,10 @@ def _page_cockpit() -> str:
 <style>
   * { box-sizing:border-box; }
   body { font-family:system-ui,sans-serif; background:#0d1117; color:#e6e6e6; margin:0; }
-  header { padding:14px 20px; background:#161b22; border-bottom:1px solid #30363d; }
+  header { padding:14px 20px; background:#161b22; border-bottom:1px solid #30363d; display:flex; align-items:center; gap:16px; }
   h1 { font-size:18px; margin:0; }
+  .cam img { width:200px; height:120px; object-fit:cover; background:#000; border:1px solid #30363d; border-radius:8px; display:block; }
+  button:disabled { opacity:.5; cursor:default; }
   .verdict { font-size:14px; margin-top:4px; font-weight:700; }
   .grid { display:flex; flex-wrap:wrap; gap:10px; padding:14px 20px; }
   .card { background:#161b22; border:1px solid #30363d; border-radius:10px; padding:12px 14px; min-width:190px; flex:1; }
@@ -399,8 +401,18 @@ def _page_cockpit() -> str:
 </style></head>
 <body>
   <header>
-    <h1>🛡️ SENTINEL-X — Cockpit</h1>
-    <div class="verdict" id="verdict">Analyse en cours…</div>
+    <div style="flex:1">
+      <h1>🛡️ SENTINEL-X — Cockpit</h1>
+      <div class="verdict" id="verdict">Analyse en cours…</div>
+      <div style="margin-top:8px">
+        <button id="iabtn" onclick="testIA()">🤖 Tester l'IA (Mistral)</button>
+        <span id="iaout" class="d" style="margin-left:8px">—</span>
+      </div>
+    </div>
+    <div class="cam">
+      <img id="cam" alt="webcam" title="flux webcam (vision)">
+      <div class="d" style="text-align:center">webcam (live)</div>
+    </div>
   </header>
   <div class="grid" id="grid"></div>
   <nav>
@@ -427,7 +439,20 @@ def _page_cockpit() -> str:
       }
     } catch(e){ document.getElementById('verdict').textContent='API injoignable…'; }
   }
+  function majCam(){ document.getElementById('cam').src = '/camera/frame?t=' + Date.now(); }
+  async function testIA(){
+    const out = document.getElementById('iaout'), btn = document.getElementById('iabtn');
+    out.textContent = 'interrogation de Mistral…'; btn.disabled = true;
+    try {
+      const r = await fetch('/api/v1/ollama', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({question:'Confirme en une phrase que le système de surveillance est opérationnel.'})});
+      const d = await r.json();
+      out.textContent = d.answer ? ('✅ ' + d.answer) : ('❌ ' + (d.error || 'IA indisponible'));
+    } catch(e){ out.textContent = '❌ IA injoignable'; }
+    btn.disabled = false;
+  }
   refresh(); setInterval(refresh, 3000);
+  majCam(); setInterval(majCam, 1500);
 </script>
 </body></html>"""
 
