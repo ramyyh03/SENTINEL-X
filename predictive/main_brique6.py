@@ -30,6 +30,7 @@ from dotenv import load_dotenv
 from predictive import arima_trainer
 from predictive.alert_aggregator import Agregateur
 from predictive.alert_generator import generer_alerte
+from predictive.alert_publisher import publier_alerte_mqtt
 from predictive.anomaly_detector import Detecteur
 from predictive.baseline_analyzer import baseline
 
@@ -139,6 +140,7 @@ def _traiter_lecture(detecteur: Detecteur, agregateur: Agregateur,
         f"score={emise['confidence']} [{sev}] → {emise['details']['context']}")
     _append_log("alerts.log", json.dumps(emise, ensure_ascii=False))
     poster_alerte(emise)
+    publier_alerte_mqtt(emise)  # -> OLED de l'ESP32 (si ALERT_MQTT_ENABLED=true)
 
 
 def _parse_ts(ts: str) -> datetime:

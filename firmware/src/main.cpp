@@ -45,6 +45,10 @@ const int PIN_MQ2 = 34;  // MQ-2       sur GPIO 34 (gaz, entrée analogique ADC1
 // --- Constantes réseau / MQTT ---
 const char* AP_NAME        = "SENTINEL-X-SETUP";  // réseau WiFi de configuration
 const char* MQTT_TOPIC     = "sentinel/sensors";  // topic attendu par la Brique 3
+#ifdef OLED_ALERTS
+const char* MQTT_ALERT_TOPIC = "sentinel/alerts"; // alertes serveur -> affichage OLED
+const unsigned long ALERTE_AFFICHAGE_MS = 30000;  // durée d'affichage d'une alerte (30 s)
+#endif
 #ifdef DEV_PLAIN_MQTT
 const int   MQTT_PORT      = 1883;                 // DEV : MQTT en clair (broker dev)
 #else
@@ -79,6 +83,10 @@ float humidite     = NAN;
 int   gaz          = 0;      // valeur brute ADC MQ-2 (0..4095) — voir README pour la calibration ppm
 bool  presence     = false;  // PIR : true = mouvement détecté
 unsigned long derniereLecture = 0;
+#ifdef OLED_ALERTS
+char  derniereAlerte[48] = "";   // dernière alerte reçue du serveur (texte court)
+unsigned long alerteRecueMs = 0; // horodatage (millis) de réception de l'alerte
+#endif
 
 // ---------------------------------------------------------------------------
 //  OLED : petit utilitaire d'affichage (jusqu'à 3 lignes)
@@ -237,6 +245,21 @@ String horodatageISO() {
   return String(buf);
 }
 
+#ifdef OLED_ALERTS
+// Réception d'une alerte serveur (topic sentinel/alerts) -> affichage OLED.
+// Payload JSON attendu : { "type": "...", "details": { "context": "..." } }
+void surMessageMQTT(char* topic, byte* payload, unsigned int longueur) {
+  if (strcmp(topic, MQTT_ALERT_TOPIC) != 0) return;
+  JsonDocument doc;
+  if (deserializeJson(doc, payload, longueur)) return;  // JSON invalide : on ignore
+  const char* type = doc["type"] | "ALERTE";
+  const char* ctx  = doc["details"]["context"] | "";
+  snprintf(derniereAlerte, sizeof(derniereAlerte), "%s %s", type, ctx);
+  alerteRecueMs = millis();
+  Serial.printf(">>> ALERTE recue : %s\n", derniereAlerte);
+}
+#endif
+
 // ---------------------------------------------------------------------------
 //  MQTT : (re)connexion non bloquante + publication d'une mesure en JSON
 // ---------------------------------------------------------------------------
@@ -251,12 +274,18 @@ void assurerMQTT() {
 #ifdef DEV_PLAIN_MQTT
   if (mqtt.connect(clientId.c_str())) {              // DEV : broker anonyme (1883)
     Serial.println("MQTT connecte (dev, sans TLS)");
+#ifdef OLED_ALERTS
+    mqtt.subscribe(MQTT_ALERT_TOPIC);                 // reçoit les alertes serveur
+#endif
     return;
   }
   Serial.printf("MQTT : echec (state=%d)\n", mqtt.state());
 #else
   if (mqtt.connect(clientId.c_str(), mqttUser, mqttPass)) {
     Serial.println("MQTTS connecte (TLS + authentification)");
+#ifdef OLED_ALERTS
+    mqtt.subscribe(MQTT_ALERT_TOPIC);                 // reçoit les alertes serveur
+#endif
     return;
   }
   // state : -2 = TCP/TLS impossible (certificat, IP, pare-feu) ; 4/5 = identifiants refusés
@@ -339,6 +368,25 @@ void afficherOLED() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
+#ifdef OLED_ALERTS
+  // Si une alerte récente est arrivée, on l'affiche en bannière inversée.
+  if (derniereAlerte[0] != '\0' && millis() - alerteRecueMs < ALERTE_AFFICHAGE_MS) {
+    display.fillRect(0, 0, 128, 12, SSD1306_WHITE);
+    display.setTextColor(SSD1306_BLACK);
+    display.setCursor(2, 2);
+    display.println("! ALERTE SENTINEL-X");
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 16);
+    display.println(derniereAlerte);
+    display.setCursor(0, 40);
+    display.printf("T:%.0fC H:%.0f%%\n", temperature, humidite);
+    display.setCursor(0, 52);
+    display.printf("Gaz:%d PIR:%d\n", gaz, presence ? 1 : 0);
+    display.display();
+    return;
+  }
+#endif
+
   // En-tête : état WiFi (IP si connecté) + indicateur MQTT
   display.setCursor(0, 0);
   if (WiFi.status() == WL_CONNECTED) {
@@ -386,6 +434,9 @@ void setup() {
 
   configurerWiFi();    // connexion WiFi (portail si 1ʳᵉ fois)
   configurerHeure();   // NTP pour l'horodatage ISO
+#ifdef OLED_ALERTS
+  mqtt.setCallback(surMessageMQTT);  // réception des alertes serveur
+#endif
   Serial.println("Sentinel-X : OLED + DHT22 + MQTT prets");
 }
 
