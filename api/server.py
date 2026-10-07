@@ -21,6 +21,7 @@ Sécurité (couche HTTP uniquement — ne double PAS le TLS/auth MQTT du CYBER) 
 """
 from __future__ import annotations
 
+import html
 import logging
 import os
 import sqlite3
@@ -302,20 +303,22 @@ def _page_dashboard(alertes: list[dict]) -> str:
         sev = _severite(a)
         couleur = _COULEURS.get(sev, "#7f8c8d")
         details = a.get("details") or {}
-        contexte = details.get("context")
-        if not contexte and details.get("persons_detected") is not None:
-            contexte = f"{details['persons_detected']} personne(s) détectée(s)"
-        contexte = contexte or ""
+        ctx = details.get("context")
+        if not ctx and details.get("persons_detected") is not None:
+            ctx = f"{details['persons_detected']} personne(s) détectée(s)"
+        # Anti-XSS : on ÉCHAPPE toute donnée (une mesure MQTT injectée pourrait
+        # contenir du <script>). Le <span> des votes, lui, est construit par nous.
+        contexte = html.escape(str(ctx or ""))
         votes = details.get("model_votes")
-        if votes:  # votes des modèles (Brique 6.3) affichés en compact
-            contexte += " · <span style='color:#8b949e'>" + " ".join(
-                f"{k[:3]}:{v}" for k, v in votes.items()) + "</span>"
+        if votes:
+            contexte += " · <span style='color:#8b949e'>" + html.escape(
+                " ".join(f"{k[:3]}:{v}" for k, v in votes.items())) + "</span>"
         lignes += (
             f"<tr>"
-            f"<td>{a.get('timestamp', '')}</td>"
-            f"<td>{a.get('source', '')}</td>"
-            f"<td>{a.get('type', '')}</td>"
-            f"<td style='text-align:center'>{a.get('confidence', '')}</td>"
+            f"<td>{html.escape(str(a.get('timestamp', '')))}</td>"
+            f"<td>{html.escape(str(a.get('source', '')))}</td>"
+            f"<td>{html.escape(str(a.get('type', '')))}</td>"
+            f"<td style='text-align:center'>{html.escape(str(a.get('confidence', '')))}</td>"
             f"<td><span class='badge' style='background:{couleur}'>{sev}</span></td>"
             f"<td class='details'>{contexte}</td>"
             f"</tr>"
@@ -381,8 +384,8 @@ def _page_live(mesures: list[dict]) -> str:
         c_gaz = "#e67e22" if gaz >= 1000 else "#58a6ff"
         cartes = (
             f"<div class='grid'>"
-            f"<div class='card'><div class='k'>Température</div><div class='v'>{d.get('temp','--')} °C</div></div>"
-            f"<div class='card'><div class='k'>Humidité</div><div class='v'>{d.get('humidity','--')} %</div></div>"
+            f"<div class='card'><div class='k'>Température</div><div class='v'>{html.escape(str(d.get('temp','--')))} °C</div></div>"
+            f"<div class='card'><div class='k'>Humidité</div><div class='v'>{html.escape(str(d.get('humidity','--')))} %</div></div>"
             f"<div class='card'><div class='k'>Gaz (MQ-2)</div><div class='v' style='color:{c_gaz}'>{int(gaz)}</div></div>"
             f"<div class='card'><div class='k'>Présence (PIR)</div><div class='v' style='color:{c_pres}'>"
             f"{'🚶 OUI' if presence else '— non'}</div></div>"
@@ -391,8 +394,10 @@ def _page_live(mesures: list[dict]) -> str:
         rangs = ""
         for m in mesures:
             pres = "🚶" if int(m.get("presence") or 0) else "—"
-            rangs += (f"<tr><td>{m.get('timestamp','')}</td><td>{m.get('temp','')}</td>"
-                      f"<td>{m.get('humidity','')}</td><td>{int(float(m.get('gas') or 0))}</td>"
+            rangs += (f"<tr><td>{html.escape(str(m.get('timestamp','')))}</td>"
+                      f"<td>{html.escape(str(m.get('temp','')))}</td>"
+                      f"<td>{html.escape(str(m.get('humidity','')))}</td>"
+                      f"<td>{int(float(m.get('gas') or 0))}</td>"
                       f"<td style='text-align:center'>{pres}</td></tr>")
         corps = cartes + (
             "<table><thead><tr><th>Timestamp</th><th>Temp °C</th><th>Humi %</th>"

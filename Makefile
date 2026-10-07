@@ -18,7 +18,7 @@ PIP := $(PY) -m pip
 DC  := docker compose -f docker-compose.dev.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap install check test test-full test-unit test-materiel check-materiel monitor-esp32 config-esp32 setup-2fa reset-db train-ensemble test-ensemble ollama-check run-all broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
+.PHONY: help bootstrap install check test test-full test-unit test-materiel check-materiel monitor-esp32 config-esp32 setup-2fa reset-db train-ensemble test-ensemble ollama-check security-audit security-fix run-all broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
 
 bootstrap: ## 🧰 Machine neuve : installe les prérequis SYSTÈME (Python, Docker…) PUIS install
 	@bash scripts/bootstrap.sh
@@ -116,6 +116,12 @@ train-ensemble: ## 🧠🔥 BRIQUE 6.3 : entraine l'ensemble hybride (IF+LOF+ECO
 
 ollama-check: ## 🤖 Vérifie si Ollama tourne (diagnostic IA du dashboard)
 	@$(PY) scripts/ollama_health_check.py
+
+security-audit: ## 🛡️  « Suis-je sécurisé ? » : audite nos failles (secrets, auth, XSS, MQTT, API)
+	@$(PY) scripts/security_audit.py --explain
+
+security-fix: ## 🩹 Applique les correctifs de sécurité SÛRS (clé de session, etc.)
+	@$(PY) scripts/security_audit.py --fix
 
 test-ensemble: ## 🧫 Tests de l'ensemble 6.3
 	@$(PY) -m pytest tests/test_ensemble.py -q

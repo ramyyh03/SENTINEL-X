@@ -26,6 +26,8 @@ if "%1"=="api-stop"    goto apistop
 if "%1"=="api-logs"    goto apilogs
 if "%1"=="train-ensemble" goto trainensemble
 if "%1"=="ollama-check"   goto ollamacheck
+if "%1"=="security-audit" goto securityaudit
+if "%1"=="security-fix"   goto securityfix
 if "%1"=="test-ensemble"  goto testensemble
 if "%1"=="train"       goto train
 if "%1"=="detect"      goto detect
@@ -136,6 +138,14 @@ goto end
 %PY% scripts\ollama_health_check.py
 goto end
 
+:securityaudit
+%PY% scripts\security_audit.py --explain
+goto end
+
+:securityfix
+%PY% scripts\security_audit.py --fix
+goto end
+
 :testensemble
 %PY% -m pytest tests\test_ensemble.py -q
 goto end
@@ -183,6 +193,8 @@ echo   test / test-full   Healthcheck rapide / Test d'integration complet
 echo   config-esp32       Prepare secrets.h de l'ESP32 (IP auto) et l'ouvre
 echo   monitor-esp32      Lit le port serie de l'ESP32 (mesures en direct)
 echo   setup-2fa          Cree un compte dashboard (login + 2FA)
+echo   security-audit     Suis-je securise ? (secrets, auth, XSS, MQTT, API)
+echo   security-fix       Applique les correctifs de securite surs
 echo   reset-db           Vide la base (enleve les donnees de test)
 echo   train / detect / replay     IA predictive (Brique 6)
 echo   detect-vision / -sim        Vision webcam (reelle / simulee)
