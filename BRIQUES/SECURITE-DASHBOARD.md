@@ -9,7 +9,7 @@ Le dashboard est **en lecture seule** (les visiteurs ne peuvent que regarder). O
 - un **login** (identifiant + mot de passe haché),
 - une **double authentification (2FA)** via une app **Authenticator** (Microsoft Authenticator, Google Authenticator…) — un code à 6 chiffres qui change toutes les 30 s (standard **TOTP**).
 
-**L'admin décide qui a accès** : il crée un compte par personne. Tant qu'**aucun** compte n'existe, le dashboard reste ouvert (pour ne pas se verrouiller dehors) ; **dès le 1er compte créé, le login devient obligatoire**.
+**L'admin décide qui a accès** : il crée un compte par personne. Tant qu'**aucun** compte n'existe, le dashboard n'est consultable que **depuis le PC serveur lui-même** (pour ne pas se verrouiller dehors) et il est **refusé depuis le réseau** ; **dès le 1er compte créé, le login devient obligatoire** pour tout le monde.
 
 ---
 
@@ -42,7 +42,10 @@ Ouvrir **http://\<IP-du-PC\>:3000/login** et saisir :
 |---|---|
 | `/dashboard`, `/live`, `/camera` | ✅ login + 2FA requis |
 | `/health` | ❌ ouvert (supervision) |
-| `POST /api/v1/alerts` | ❌ ouvert en local (les IA postent depuis le PC) |
+| `POST /api/v1/alerts` | ✅ réservé au PC serveur (les IA postent depuis le PC) ; depuis une autre machine : refusé, sauf jeton `API_ALERT_TOKEN` (en-tête `X-Sentinel-Token`) |
+| `POST /login` | ✅ blocage temporaire après 5 échecs par adresse (5 min) |
+
+> Tout ce qui est affiché (alertes, mesures) est **échappé** : un contenu piégé s'affiche comme du texte et n'est jamais exécuté (anti-XSS, tests dans `tests/`).
 
 ## Fichiers (jamais dans Git)
 - `data/dashboard_users.json` — comptes (mot de passe **haché** + secret TOTP). Gitignoré.

@@ -21,6 +21,7 @@ Sécurité (couche HTTP uniquement — ne double PAS le TLS/auth MQTT du CYBER) 
 """
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import sqlite3
@@ -46,6 +47,10 @@ API_HOST = os.getenv("API_HOST", "127.0.0.1")   # local par défaut (sécurité)
 API_PORT = int(os.getenv("API_PORT", "3000"))
 RATE_MAX = int(os.getenv("API_RATE_MAX", "100"))     # requêtes max…
 RATE_WINDOW_S = int(os.getenv("API_RATE_WINDOW", "60"))  # …par fenêtre (s) et par IP
+# Jeton partagé exigé pour poster une alerte depuis une AUTRE machine (vide = local seulement)
+ALERT_TOKEN = os.getenv("API_ALERT_TOKEN", "")
+LOGIN_MAX_ECHECS = int(os.getenv("API_LOGIN_MAX_FAILS", "5"))      # échecs de login max…
+LOGIN_FENETRE_S = int(os.getenv("API_LOGIN_WINDOW", "300"))         # …par fenêtre (s) et par IP
 
 # --- Champs obligatoires de l'alerte (format immuable) + types tolérés ---
 CHAMPS_REQUIS: dict[str, tuple] = {
@@ -77,7 +82,31 @@ def _e(valeur: object) -> str:
     jamais du code : `<script>` devient `&lt;script&gt;` et s'affiche tel quel.
     """
     return escape(str(valeur), quote=True)
+
+
 _requetes_par_ip: dict[str, deque] = defaultdict(deque)
+_echecs_login_par_ip: dict[str, deque] = defaultdict(deque)
+
+
+def _emetteur_autorise(ip: str, jeton: str) -> bool:
+    """Qui a le droit de poster une alerte ?
+
+    - les programmes du PC lui-même (briques IA) : toujours ;
+    - une autre machine : seulement avec le jeton API_ALERT_TOKEN, et seulement
+      si ce jeton a été configuré. Sans jeton configuré, le réseau est refusé.
+    """
+    if auth.est_local(ip):
+        return True
+    return bool(ALERT_TOKEN) and hmac.compare_digest(jeton, ALERT_TOKEN)
+
+
+def _login_bloque(ip: str) -> bool:
+    """Vrai si cette IP a accumulé trop d'échecs de connexion récemment."""
+    maintenant = time.monotonic()
+    echecs = _echecs_login_par_ip[ip]
+    while echecs and echecs[0] < maintenant - LOGIN_FENETRE_S:
+        echecs.popleft()
+    return len(echecs) >= LOGIN_MAX_ECHECS
 
 
 def valider_alerte(data: object) -> list[str]:
@@ -136,6 +165,8 @@ def create_app(store: AlertStore | None = None) -> Flask:
     """Fabrique l'application Flask (factory → facile à tester via test_client)."""
     app = Flask(__name__)
     app.secret_key = _secret_key()  # nécessaire aux sessions (login)
+    # Le cookie de session n'est pas envoyé par un autre site (anti-CSRF de base)
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     magasin = store or AlertStore()
 
     @app.get("/login")
@@ -144,14 +175,20 @@ def create_app(store: AlertStore | None = None) -> Flask:
 
     @app.post("/login")
     def login_post():
+        ip = request.remote_addr or "?"
+        if _login_bloque(ip):
+            logger.warning("Login bloqué (trop d'échecs) pour %s", ip)
+            return _page_login(erreur="Trop de tentatives. Réessayez dans quelques minutes."), 429
         u = request.form.get("username", "")
         p = request.form.get("password", "")
         code = request.form.get("code", "")
         if auth.verifier(u, p, code):
+            _echecs_login_par_ip.pop(ip, None)
             session["user"] = u
             logger.info("Connexion dashboard réussie : %s", u)
             return redirect(url_for("dashboard"))
-        logger.warning("Connexion dashboard refusée : %s", u)
+        _echecs_login_par_ip[ip].append(time.monotonic())
+        logger.warning("Connexion dashboard refusée : %s (depuis %s)", u, ip)
         return _page_login(erreur="Identifiant, mot de passe ou code 2FA invalide."), 401
 
     @app.get("/logout")
@@ -167,6 +204,9 @@ def create_app(store: AlertStore | None = None) -> Flask:
         if not _rate_limit_ok(ip):
             logger.warning("Rate limit dépassé pour %s", ip)
             return jsonify({"error": "trop de requêtes (rate limit)"}), 429
+        if not _emetteur_autorise(ip, request.headers.get("X-Sentinel-Token", "")):
+            logger.warning("Alerte refusée : émetteur non autorisé (%s)", ip)
+            return jsonify({"error": "émetteur non autorisé"}), 403
         if not request.is_json:
             return jsonify({"error": "Content-Type: application/json requis"}), 415
 
