@@ -176,6 +176,19 @@ def _ouvrir_webcam(index: int = CAMERA_INDEX) -> cv2.VideoCapture | None:
     return cap
 
 
+def _ouvrir_webcam_auto(prefere: int = CAMERA_INDEX, maxi: int = 3):
+    """Essaie l'index préféré puis balaie 0..maxi. Retourne (cap, index) ou (None, -1).
+
+    Utile car la webcam USB (UGREEN CM678) est souvent sur l'index 1, pas 0.
+    """
+    candidats = [prefere] + [i for i in range(maxi + 1) if i != prefere]
+    for idx in candidats:
+        cap = _ouvrir_webcam(idx)
+        if cap is not None:
+            return cap, idx
+    return None, -1
+
+
 def lister_cameras(maxi: int = 5) -> None:
     """Scanne les index 0..maxi et affiche les caméras ouvrables (pour trouver la bonne)."""
     log("SCAN", Fore.MAGENTA, f"Recherche des caméras (index 0 à {maxi})…")
@@ -209,13 +222,15 @@ def run_detection(api_url: str | None = None, simulate: bool = False,
 
     cap = None
     if not simulate:
-        cap = _ouvrir_webcam(camera_index)
+        cap, idx_trouve = _ouvrir_webcam_auto(camera_index)
         if cap is None:
             log("CAMÉRA", Fore.YELLOW,
-                f"Webcam (index {camera_index}) indisponible (absente ou permission refusée).")
+                f"Aucune webcam trouvée (index testés : {camera_index}, 0-3).")
             log("AIDE", Fore.YELLOW, _message_permission())
-            log("AIDE", Fore.YELLOW, "Webcam USB non trouvée ? Essaie un autre index : --camera 1")
+            log("AIDE", Fore.YELLOW, "Branche la webcam USB puis relance, ou force : --camera 1")
             simulate = True
+        elif idx_trouve != camera_index:
+            log("CAMÉRA", Fore.GREEN, f"Webcam détectée automatiquement sur l'index {idx_trouve}.")
 
     if simulate:
         log("SIMULATION", Fore.CYAN, "MODE SIMULATION ACTIVÉ — frames synthétiques (pas de vraie caméra).")

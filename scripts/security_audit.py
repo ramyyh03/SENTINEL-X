@@ -236,6 +236,24 @@ def appliquer_correctifs(constats: list[Constat]) -> list[str]:
             cle.parent.mkdir(parents=True, exist_ok=True)
             cle.write_text(_secrets.token_hex(32), encoding="utf-8")
             actions.append(f"Clé de session générée → {cle.relative_to(PROJECT_ROOT)}")
+    actions.extend(_durcir_permissions())
+    return actions
+
+
+def _durcir_permissions() -> list[str]:
+    """Restreint les droits des fichiers sensibles (lecture propriétaire only)."""
+    actions: list[str] = []
+    sensibles = (".env", "data/.flask_secret", "data/dashboard_users.json")
+    for rel in sensibles:
+        f = PROJECT_ROOT / rel
+        if not f.exists():
+            continue
+        try:
+            if (f.stat().st_mode & 0o077) != 0:   # déjà restreint ? on ne refait rien
+                f.chmod(0o600)
+                actions.append(f"Droits restreints (600) → {rel}")
+        except OSError:
+            pass   # Windows gère peu chmod : sans effet, mais jamais bloquant
     return actions
 
 

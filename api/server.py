@@ -213,6 +213,11 @@ def create_app(store: AlertStore | None = None) -> Flask:
     def security():
         return _page_security()
 
+    @app.post("/api/v1/security-fix")
+    @auth.login_required
+    def security_fix():
+        return jsonify(_appliquer_correctifs_securite())
+
     @app.get("/camera/frame")
     @auth.login_required
     def camera_frame():
@@ -457,6 +462,23 @@ def _page_cockpit() -> str:
 </body></html>"""
 
 
+def _appliquer_correctifs_securite() -> dict:
+    """Applique les correctifs SÛRS automatiquement, liste ce qui reste manuel."""
+    try:
+        from scripts.security_audit import appliquer_correctifs, lancer_controles
+        constats = lancer_controles()
+        actions = appliquer_correctifs(constats)
+        constats = lancer_controles()   # ré-audit après correction
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "erreur": str(exc), "actions": [], "manuel": []}
+
+    manuel = [{"controle": c.controle, "correctif": c.correctif}
+              for c in constats if not c.ok]
+    return {"ok": True, "actions": actions, "manuel": manuel,
+            "message": (f"{len(actions)} correctif(s) appliqué(s) automatiquement."
+                        if actions else "Rien à corriger automatiquement.")}
+
+
 def _page_security() -> str:
     """Page web « Suis-je sécurisé ? » : lance l'audit et affiche le rapport."""
     try:
@@ -514,7 +536,26 @@ def _page_security() -> str:
     <tr><th></th><th>Contrôle</th><th>Gravité</th><th>Détail & correctif</th></tr>
     {lignes}
   </table>
-  <p style="margin-top:14px"><button onclick="location.reload()">↻ Relancer l'audit</button></p>
+  <p style="margin-top:14px">
+    <button onclick="location.reload()">↻ Relancer l'audit</button>
+    <button onclick="corriger()" style="background:#2ea043;color:#fff;font-weight:700">🔧 Corriger automatiquement</button>
+    <span id="fixout" style="margin-left:10px;color:#adbac7;font-size:13px"></span>
+  </p>
+<script>
+  async function corriger(){{
+    const out = document.getElementById('fixout');
+    out.textContent = 'Correction en cours…';
+    try {{
+      const r = await fetch('/api/v1/security-fix', {{method:'POST'}});
+      const d = await r.json();
+      if (!d.ok) {{ out.textContent = '❌ ' + (d.erreur || 'échec'); return; }}
+      let msg = '✅ ' + d.message;
+      if (d.manuel && d.manuel.length) msg += ' · ' + d.manuel.length + ' point(s) à faire à la main';
+      out.textContent = msg;
+      setTimeout(function(){{ location.reload(); }}, 1500);
+    }} catch(e) {{ out.textContent = '❌ serveur injoignable'; }}
+  }}
+</script>
 </body></html>"""
 
 
@@ -684,6 +725,7 @@ def _page_camera() -> str:
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "60"))  # 1ʳᵉ réponse = chargement RAM
 
 
 def _ollama_status() -> dict:
@@ -704,11 +746,17 @@ def _ollama_ask(question: str, context=None) -> dict:
     prompt = (f"Tu es expert en sécurité industrielle. Contexte capteurs : {context}. "
               f"Question : {question}. Réponds en 1-2 phrases techniques et concrètes.")
     try:
+        # Timeout large : la 1ʳᵉ requête charge le modèle en RAM (20-60 s sur CPU).
         r = requests.post(f"{OLLAMA_URL}/api/generate",
                           json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False,
-                                "options": {"temperature": 0.3}}, timeout=10)
+                                "options": {"temperature": 0.3}}, timeout=OLLAMA_TIMEOUT)
         if r.status_code == 200:
             return {"answer": r.json().get("response", "").strip(), "source": OLLAMA_MODEL}
+        return {"error": f"Ollama a répondu {r.status_code}",
+                "suggestion": f"modèle « {OLLAMA_MODEL} » installé ? → ollama pull {OLLAMA_MODEL}"}
+    except requests.Timeout:
+        return {"error": "Mistral met du temps à charger — réessaie dans 30 s",
+                "suggestion": "la 1ʳᵉ réponse charge le modèle en mémoire"}
     except requests.RequestException:
         pass
     return {"error": "Ollama non disponible", "suggestion": "ollama serve puis ollama pull mistral"}

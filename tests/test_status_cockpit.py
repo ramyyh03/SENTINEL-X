@@ -42,3 +42,13 @@ def test_page_security_rend_une_page():
 
     # Assert
     assert "Suis-je sécurisé" in html and "<table>" in html
+
+
+def test_correctifs_securite_structure():
+    # Act : l'auto-correctif renvoie la liste de ce qui est fait et de ce qui reste
+    res = server._appliquer_correctifs_securite()
+
+    # Assert
+    assert res["ok"] is True
+    assert isinstance(res["actions"], list)
+    assert isinstance(res["manuel"], list)   # items non auto-corrigeables, avec étapes
