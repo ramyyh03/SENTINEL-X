@@ -474,13 +474,16 @@ void setup() {
   Wire.begin(21, 22);  // I²C : SDA=21, SCL=22
   Wire.setTimeOut(50); // ms : jamais de blocage I2C
 
-  // Scanner I²C de diagnostic : liste les périphériques présents sur le bus.
+  // Scanner I²C : liste les périphériques ET mémorise l'adresse de l'OLED.
+  // (Approche éprouvée : on démarre l'écran sur l'adresse RÉELLEMENT détectée.)
   Serial.println("--- Scan I2C (SDA=GPIO21, SCL=GPIO22) ---");
+  byte adresseOled = 0;
   int nbI2C = 0;
   for (byte addr = 1; addr < 127; addr++) {
     Wire.beginTransmission(addr);
     if (Wire.endTransmission() == 0) {
       Serial.printf("  peripherique I2C trouve a 0x%02X\n", addr);
+      if (addr == 0x3C || addr == 0x3D) adresseOled = addr;  // OLED SSD1306
       nbI2C++;
     }
   }
@@ -488,15 +491,15 @@ void setup() {
     Serial.println("  AUCUN peripherique I2C ! -> SDA/SCL inverses ou debranches, ou 3V3/GND absents.");
   Serial.println("-----------------------------------------");
 
-  // Essaie les deux adresses I²C usuelles du SSD1306 (0x3C puis 0x3D).
-  // Si l'OLED ne répond pas : on NE BLOQUE PAS — capteurs/WiFi/MQTT/LEDs continuent.
-  oledPresent = display.begin(SSD1306_SWITCHCAPVCC, 0x3C)
-             || display.begin(SSD1306_SWITCHCAPVCC, 0x3D);
-  if (oledPresent) {
+  // Démarre l'écran sur l'adresse détectée. Si l'OLED est absente, on NE BLOQUE
+  // PAS — capteurs/WiFi/MQTT/LEDs continuent de fonctionner.
+  if (adresseOled != 0 && display.begin(SSD1306_SWITCHCAPVCC, adresseOled)) {
+    oledPresent = true;
     display.setTextColor(SSD1306_WHITE);
-    Serial.println("OLED detectee et initialisee.");
+    Serial.printf("OLED OK a l'adresse 0x%02X\n", adresseOled);
   } else {
-    Serial.println("OLED introuvable (I2C 0x3C/0x3D) - verifie SDA=21/SCL=22/3V3/GND. On continue sans ecran.");
+    oledPresent = false;
+    Serial.println("OLED introuvable - verifie SDA=21/SCL=22/3V3/GND. On continue sans ecran.");
   }
 
   dht.begin();
