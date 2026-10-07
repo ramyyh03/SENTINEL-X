@@ -60,10 +60,28 @@ make install           # venv + dépendances + vérification
 
 Ensuite, **lis ta section** dans `BRIQUES/BRIQUE0-Architecture-GitHub.md`.
 
+### 🖥️ Lancer tout le système — UNE commande
+
+```bash
+make app        # 🪟 Windows : .\make.bat app
+```
+
+Démarre **tout en arrière-plan** (broker, API, ingestion, détection IA, webcam)
+**sans ouvrir de terminal**, puis ouvre une **fenêtre d'application** (le Cockpit) :
+analyse de connectivité en direct (API, broker, ESP32, webcam, IA, **Mistral**),
+aperçu webcam live, bouton « Tester l'IA », et les pages Alertes / Capteurs /
+Caméra / Sécurité embarquées. Arrêt : fermer la fenêtre (ou `make stop`).
+
+> `make start` fait la même chose mais ouvre le navigateur au lieu d'une fenêtre.
+> Détails + câblage des LEDs de statut : `BRIQUES/APP-BUREAU-LEDS.md`.
+
 ### 🧰 Les autres commandes (`make help`)
 
 | Commande | Rôle |
 |---|---|
+| `make app` | 🖥️ **Application de bureau** : lance tout + fenêtre cockpit (analyse + webcam) |
+| `make start` / `make stop` | Idem en arrière-plan (navigateur) / tout arrêter |
+| `make security-audit` | 🛡️ « Suis-je sécurisé ? » (secrets, auth, XSS, MQTT, HMAC, API) |
 | `bash scripts/bootstrap.sh` (ou `make bootstrap`) | 🧰 **Machine neuve** : prérequis système (Python/Docker…) **+** tout le reste |
 | `make install` | ⭐ Installe tout (venv + deps) **et** vérifie l'environnement |
 | `make check` | Vérifie les dépendances **sans rien installer** |
