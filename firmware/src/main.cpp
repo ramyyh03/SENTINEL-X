@@ -158,18 +158,20 @@ void configurerWiFi() {
   strncpy(brokerIp, BROKER_IP, sizeof(brokerIp) - 1);
   brokerIp[sizeof(brokerIp) - 1] = '\0';
   WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);   // reconnexion automatique en tâche de fond
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   oledLignes("WiFi (secrets)", WIFI_SSID, "connexion...");
   unsigned long t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 30000) {
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
     delay(500);
     Serial.print(".");
   }
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("\nEchec WiFi (secrets) - verifier SSID/mot de passe - redemarrage");
-    oledLignes("Echec WiFi", "Redemarrage...");
-    delay(1500);
-    ESP.restart();
+    // PAS de redémarrage : le système continue EN LOCAL (capteurs/OLED/LEDs) et
+    // le WiFi se reconnecte tout seul en arrière-plan. Évite tout reboot-loop.
+    Serial.println("\nWiFi pas encore connecte - on CONTINUE (local), reconnexion auto en fond.");
+    oledLignes("WiFi hors ligne", "capteurs OK", "reconnexion...");
+    return;
   }
   Serial.printf("WiFi OK (secrets) - IP %s | broker %s:%d\n",
                 WiFi.localIP().toString().c_str(), brokerIp, MQTT_PORT);
@@ -461,8 +463,16 @@ void setup() {
   // carte reset/plante au démarrage du WiFi -> c'est un manque de courant :
   // alim 5V solide (bon câble/chargeur 2A), MQ-2 sur 5V, LEDs avec résistances.
   Serial.begin(115200);
-  delay(300);
+  delay(400);
+  Serial.println("\n=== SENTINEL-X demarrage ===");   // imprime AVANT l'I2C
+  Serial.flush();
+
+  // Résistances internes de tirage : le bus I2C ne "flotte" pas si l'OLED est
+  // absente, ce qui évite tout blocage au démarrage.
+  pinMode(21, INPUT_PULLUP);
+  pinMode(22, INPUT_PULLUP);
   Wire.begin(21, 22);  // I²C : SDA=21, SCL=22
+  Wire.setTimeOut(50); // ms : jamais de blocage I2C
 
   // Scanner I²C de diagnostic : liste les périphériques présents sur le bus.
   Serial.println("--- Scan I2C (SDA=GPIO21, SCL=GPIO22) ---");
