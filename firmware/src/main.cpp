@@ -30,6 +30,9 @@
 #include <Preferences.h>      // stockage persistant (IP du broker) en flash NVS
 #include <time.h>
 #include "ca_cert.h"          // certificat PUBLIC de la CA interne (CA_CERT)
+#ifdef USE_SECRETS
+#include "secrets.h"          // config EN DUR (WiFi + IP broker) — ni portail ni téléphone
+#endif
 
 // --- Broches ---
 const int PIN_DHT = 4;   // DHT22      sur GPIO 4  (température + humidité)
@@ -121,6 +124,27 @@ void chargerMotDePassePortail() {
 }
 
 void configurerWiFi() {
+#ifdef USE_SECRETS
+  // ---- Config EN DUR (secrets.h) : aucun portail, aucun téléphone ----
+  strncpy(brokerIp, BROKER_IP, sizeof(brokerIp) - 1);
+  brokerIp[sizeof(brokerIp) - 1] = '\0';
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  oledLignes("WiFi (secrets)", WIFI_SSID, "connexion...");
+  unsigned long t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 30000) {
+    delay(500);
+    Serial.print(".");
+  }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("\nEchec WiFi (secrets) - verifier SSID/mot de passe - redemarrage");
+    oledLignes("Echec WiFi", "Redemarrage...");
+    delay(1500);
+    ESP.restart();
+  }
+  Serial.printf("WiFi OK (secrets) - IP %s | broker %s:%d\n",
+                WiFi.localIP().toString().c_str(), brokerIp, MQTT_PORT);
+#else
   WiFi.mode(WIFI_STA);          // radio allumée : esp_random() fournit un vrai aléa
   chargerMotDePassePortail();
 
@@ -183,6 +207,7 @@ void configurerWiFi() {
 
   Serial.printf("WiFi OK — IP locale %s | broker MQTTS %s:%d (utilisateur %s)\n",
                 WiFi.localIP().toString().c_str(), brokerIp, MQTT_PORT, mqttUser);
+#endif  // USE_SECRETS
 
   // TLS : l'ESP32 n'accepte que les brokers dont le certificat est signé par
   // notre CA ET émis pour l'adresse saisie au portail (sinon : connexion refusée).
