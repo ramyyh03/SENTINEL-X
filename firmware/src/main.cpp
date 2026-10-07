@@ -37,6 +37,11 @@
 #include "secrets.h"          // config EN DUR (WiFi + IP broker) — ni portail ni téléphone
 #endif
 
+// Réception des alertes serveur : nécessaire à l'affichage OLED ET aux LEDs.
+#if defined(OLED_ALERTS) || defined(STATUS_LEDS)
+#define ALERTES_RX 1
+#endif
+
 // --- Broches ---
 const int PIN_DHT = 4;   // DHT22      sur GPIO 4  (température + humidité)
 const int PIN_PIR = 27;  // PIR HC-SR501 sur GPIO 27 (présence, sortie numérique)
@@ -45,9 +50,14 @@ const int PIN_MQ2 = 34;  // MQ-2       sur GPIO 34 (gaz, entrée analogique ADC1
 // --- Constantes réseau / MQTT ---
 const char* AP_NAME        = "SENTINEL-X-SETUP";  // réseau WiFi de configuration
 const char* MQTT_TOPIC     = "sentinel/sensors";  // topic attendu par la Brique 3
-#ifdef OLED_ALERTS
-const char* MQTT_ALERT_TOPIC = "sentinel/alerts"; // alertes serveur -> affichage OLED
+#ifdef ALERTES_RX
+const char* MQTT_ALERT_TOPIC = "sentinel/alerts"; // alertes serveur -> OLED + LEDs
 const unsigned long ALERTE_AFFICHAGE_MS = 30000;  // durée d'affichage d'une alerte (30 s)
+#endif
+#ifdef STATUS_LEDS
+const int PIN_LED_VERT   = 26;   // LED verte  (D26) : tout va bien
+const int PIN_LED_ORANGE = 14;   // LED orange (D14) : avertissement / déconnecté
+const int PIN_LED_ROUGE  = 13;   // LED rouge  (D13) : alerte critique
 #endif
 #ifdef DEV_PLAIN_MQTT
 const int   MQTT_PORT      = 1883;                 // DEV : MQTT en clair (broker dev)
@@ -83,8 +93,9 @@ float humidite     = NAN;
 int   gaz          = 0;      // valeur brute ADC MQ-2 (0..4095) — voir README pour la calibration ppm
 bool  presence     = false;  // PIR : true = mouvement détecté
 unsigned long derniereLecture = 0;
-#ifdef OLED_ALERTS
+#ifdef ALERTES_RX
 char  derniereAlerte[48] = "";   // dernière alerte reçue du serveur (texte court)
+char  alerteSeverite[12] = "";   // "CRITICAL" / "WARNING" / "INFO"
 unsigned long alerteRecueMs = 0; // horodatage (millis) de réception de l'alerte
 #endif
 
@@ -245,18 +256,20 @@ String horodatageISO() {
   return String(buf);
 }
 
-#ifdef OLED_ALERTS
-// Réception d'une alerte serveur (topic sentinel/alerts) -> affichage OLED.
-// Payload JSON attendu : { "type": "...", "details": { "context": "..." } }
+#ifdef ALERTES_RX
+// Réception d'une alerte serveur (topic sentinel/alerts) -> OLED + LEDs.
+// Payload JSON attendu : { "type": "...", "details": { "context":"", "severity":"" } }
 void surMessageMQTT(char* topic, byte* payload, unsigned int longueur) {
   if (strcmp(topic, MQTT_ALERT_TOPIC) != 0) return;
   JsonDocument doc;
   if (deserializeJson(doc, payload, longueur)) return;  // JSON invalide : on ignore
   const char* type = doc["type"] | "ALERTE";
   const char* ctx  = doc["details"]["context"] | "";
+  const char* sev  = doc["details"]["severity"] | "WARNING";
   snprintf(derniereAlerte, sizeof(derniereAlerte), "%s %s", type, ctx);
+  snprintf(alerteSeverite, sizeof(alerteSeverite), "%s", sev);
   alerteRecueMs = millis();
-  Serial.printf(">>> ALERTE recue : %s\n", derniereAlerte);
+  Serial.printf(">>> ALERTE recue [%s] : %s\n", alerteSeverite, derniereAlerte);
 }
 #endif
 
@@ -274,7 +287,7 @@ void assurerMQTT() {
 #ifdef DEV_PLAIN_MQTT
   if (mqtt.connect(clientId.c_str())) {              // DEV : broker anonyme (1883)
     Serial.println("MQTT connecte (dev, sans TLS)");
-#ifdef OLED_ALERTS
+#ifdef ALERTES_RX
     mqtt.subscribe(MQTT_ALERT_TOPIC);                 // reçoit les alertes serveur
 #endif
     return;
@@ -283,7 +296,7 @@ void assurerMQTT() {
 #else
   if (mqtt.connect(clientId.c_str(), mqttUser, mqttPass)) {
     Serial.println("MQTTS connecte (TLS + authentification)");
-#ifdef OLED_ALERTS
+#ifdef ALERTES_RX
     mqtt.subscribe(MQTT_ALERT_TOPIC);                 // reçoit les alertes serveur
 #endif
     return;
@@ -415,6 +428,23 @@ void afficherOLED() {
   display.display();
 }
 
+#ifdef STATUS_LEDS
+// Met à jour les 3 LEDs selon l'état du système (une seule allumée) :
+//   ROUGE  = alerte critique récente
+//   ORANGE = avertissement récent OU déconnecté (WiFi/MQTT)
+//   VERT   = tout va bien (connecté, aucune alerte récente)
+void majStatutLeds() {
+  bool connecte = (WiFi.status() == WL_CONNECTED) && mqtt.connected();
+  bool recente  = derniereAlerte[0] != '\0' && millis() - alerteRecueMs < ALERTE_AFFICHAGE_MS;
+  bool critique = recente && strcmp(alerteSeverite, "CRITICAL") == 0;
+  bool warning  = recente && !critique;
+
+  digitalWrite(PIN_LED_ROUGE,  critique ? HIGH : LOW);
+  digitalWrite(PIN_LED_ORANGE, (!critique && (warning || !connecte)) ? HIGH : LOW);
+  digitalWrite(PIN_LED_VERT,   (!critique && !warning && connecte) ? HIGH : LOW);
+}
+#endif
+
 // ---------------------------------------------------------------------------
 //  setup / loop
 // ---------------------------------------------------------------------------
@@ -430,11 +460,17 @@ void setup() {
 
   dht.begin();
   pinMode(PIN_PIR, INPUT);     // PIR : sortie numérique
+#ifdef STATUS_LEDS
+  pinMode(PIN_LED_VERT, OUTPUT);
+  pinMode(PIN_LED_ORANGE, OUTPUT);
+  pinMode(PIN_LED_ROUGE, OUTPUT);
+  digitalWrite(PIN_LED_ORANGE, HIGH);  // orange au démarrage (pas encore connecté)
+#endif
   analogReadResolution(12);    // MQ-2 : ADC 12 bits (0..4095)
 
   configurerWiFi();    // connexion WiFi (portail si 1ʳᵉ fois)
   configurerHeure();   // NTP pour l'horodatage ISO
-#ifdef OLED_ALERTS
+#ifdef ALERTES_RX
   mqtt.setCallback(surMessageMQTT);  // réception des alertes serveur
 #endif
   Serial.println("Sentinel-X : OLED + DHT22 + MQTT prets");
@@ -443,6 +479,9 @@ void setup() {
 void loop() {
   assurerMQTT();
   mqtt.loop();
+#ifdef STATUS_LEDS
+  majStatutLeds();   // LEDs vert/orange/rouge selon l'état du système
+#endif
 
   // Détection PIR instantanée : rafraîchit l'OLED dès qu'un mouvement change
   bool pirMaintenant = digitalRead(PIN_PIR) == HIGH;

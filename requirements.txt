@@ -39,3 +39,6 @@ qrcode>=7.4
 
 # --- Ensemble hybride (Brique 6.3) ---
 pyod>=1.1.0
+
+# --- Application de bureau (fenêtre native : cockpit + pages web) ---
+pywebview>=5.0

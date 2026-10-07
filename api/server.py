@@ -24,6 +24,7 @@ from __future__ import annotations
 import html
 import logging
 import os
+import socket
 import sqlite3
 import time
 from datetime import timezone as _tz
@@ -183,6 +184,15 @@ def create_app(store: AlertStore | None = None) -> Flask:
         uptime = f"{secondes // 3600}h{(secondes % 3600) // 60:02d}m{secondes % 60:02d}s"
         return jsonify({"status": "ok", "alerts_count": magasin.count(), "uptime": uptime})
 
+    @app.get("/api/v1/status")
+    def statut_systeme():
+        return jsonify(_statut_systeme(magasin.db_path))
+
+    @app.get("/app")
+    @auth.login_required
+    def cockpit():
+        return _page_cockpit()
+
     @app.get("/dashboard")
     @auth.login_required
     def dashboard():
@@ -301,8 +311,125 @@ def _lire_capteurs(db_path, limit: int = 20) -> list[dict]:
         return []  # table pas encore créée (aucune donnée capteur)
 
 
+MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+ESP32_FRAIS_S = 15          # une mesure plus récente = ESP32/capteurs « connectés »
+OLLAMA_MODELE = os.getenv("OLLAMA_MODEL", "mistral")
+
+
+def _tcp_ouvert(host: str, port: int, timeout: float = 1.5) -> bool:
+    """Teste si un port TCP accepte une connexion (broker MQTT joignable ?)."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _age_derniere_mesure(db_path) -> float | None:
+    """Âge (secondes) de la dernière mesure capteur, ou None si aucune."""
+    lignes = _lire_capteurs(db_path, 1)
+    if not lignes:
+        return None
+    ts = str(lignes[0].get("timestamp", ""))
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - dt).total_seconds()
+    except (ValueError, AttributeError):
+        return None
+
+
+def _statut_systeme(db_path) -> dict:
+    """Analyse complète : chaque brique est-elle connectée et fonctionnelle ?"""
+    ollama = _ollama_status()
+    mistral_ok = ollama.get("online") and any(
+        OLLAMA_MODELE in (m or "") for m in ollama.get("models", []))
+    age = _age_derniere_mesure(db_path)
+    esp32_ok = age is not None and age <= ESP32_FRAIS_S
+    ensemble_ok = (PROJECT_ROOT / "models" / "ensemble" / "ensemble_metadata.json").exists()
+    # Webcam « live » : l'image annotée est rafraîchie récemment par la vision.
+    cam_age = (time.time() - LATEST_FRAME.stat().st_mtime) if LATEST_FRAME.exists() else None
+    cam_ok = cam_age is not None and cam_age <= ESP32_FRAIS_S
+
+    composants = {
+        "api": {"ok": True, "label": "API serveur"},
+        "broker": {"ok": _tcp_ouvert(MQTT_HOST, MQTT_PORT), "label": f"Broker MQTT ({MQTT_PORT})"},
+        "esp32": {"ok": esp32_ok, "label": "ESP32 / capteurs",
+                  "detail": "aucune mesure" if age is None else f"dernière mesure il y a {int(age)} s"},
+        "webcam": {"ok": cam_ok, "label": "Webcam (vision YOLO)",
+                   "detail": "flux actif" if cam_ok else "pas de flux (webcam branchée ?)"},
+        "detection": {"ok": ensemble_ok, "label": "Détection IA (ensemble 6.3)",
+                      "detail": "modèle chargé" if ensemble_ok else "non entraîné (make train-ensemble)"},
+        "ollama": {"ok": bool(ollama.get("online")), "label": "Ollama (serveur local)"},
+        "ia": {"ok": bool(mistral_ok), "label": "IA Mistral fonctionnelle",
+               "detail": "mistral prêt" if mistral_ok else "modèle mistral absent (ollama pull mistral)"},
+    }
+    tout_ok = all(c["ok"] for c in composants.values())
+    return {"tout_ok": tout_ok, "composants": composants,
+            "maj": datetime.now(timezone.utc).strftime("%H:%M:%S UTC")}
+
+
 _SECU_COULEURS = {"CRITICAL": "#e74c3c", "HIGH": "#e74c3c", "MEDIUM": "#f39c12",
                   "LOW": "#3498db", "OK": "#2ecc71"}
+
+
+def _page_cockpit() -> str:
+    """Cockpit de l'app : analyse de connectivité en direct + pages embarquées."""
+    return """<!doctype html>
+<html lang="fr"><head>
+<meta charset="utf-8">
+<title>SENTINEL-X</title>
+<style>
+  * { box-sizing:border-box; }
+  body { font-family:system-ui,sans-serif; background:#0d1117; color:#e6e6e6; margin:0; }
+  header { padding:14px 20px; background:#161b22; border-bottom:1px solid #30363d; }
+  h1 { font-size:18px; margin:0; }
+  .verdict { font-size:14px; margin-top:4px; font-weight:700; }
+  .grid { display:flex; flex-wrap:wrap; gap:10px; padding:14px 20px; }
+  .card { background:#161b22; border:1px solid #30363d; border-radius:10px; padding:12px 14px; min-width:190px; flex:1; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:8px; }
+  .k { font-weight:600; font-size:14px; }
+  .d { color:#8b949e; font-size:12px; margin-top:4px; }
+  nav { padding:0 20px 10px; }
+  nav a, nav button { background:#21262d; color:#e6e6e6; border:1px solid #30363d; border-radius:7px; padding:7px 12px; margin-right:6px; text-decoration:none; font-size:13px; cursor:pointer; display:inline-block; }
+  nav a.on { background:#1f6feb; border-color:#1f6feb; }
+  iframe { width:100%; height:62vh; border:0; border-top:1px solid #30363d; background:#fff; }
+</style></head>
+<body>
+  <header>
+    <h1>🛡️ SENTINEL-X — Cockpit</h1>
+    <div class="verdict" id="verdict">Analyse en cours…</div>
+  </header>
+  <div class="grid" id="grid"></div>
+  <nav>
+    <a href="#" class="on" onclick="go('/dashboard',this);return false">Alertes</a>
+    <a href="#" onclick="go('/live',this);return false">Capteurs</a>
+    <a href="#" onclick="go('/camera',this);return false">Caméra</a>
+    <a href="#" onclick="go('/security',this);return false">Sécurité</a>
+  </nav>
+  <iframe id="vue" src="/dashboard"></iframe>
+<script>
+  function go(url, el){ document.getElementById('vue').src=url;
+    document.querySelectorAll('nav a').forEach(a=>a.classList.remove('on')); el.classList.add('on'); }
+  async function refresh(){
+    try {
+      const r = await fetch('/api/v1/status'); const s = await r.json();
+      const v = document.getElementById('verdict');
+      v.textContent = s.tout_ok ? '✅ Tout est connecté et fonctionnel' : '⚠️ Certains éléments ne sont pas connectés';
+      v.style.color = s.tout_ok ? '#2ecc71' : '#f39c12';
+      const g = document.getElementById('grid'); g.innerHTML='';
+      for (const key in s.composants){ const c = s.composants[key];
+        const col = c.ok ? '#2ecc71' : '#e74c3c';
+        g.innerHTML += `<div class="card"><div class="k"><span class="dot" style="background:${col}"></span>${c.label}</div>`
+          + `<div class="d">${c.ok?'connecté':'non connecté'}${c.detail?(' · '+c.detail):''}</div></div>`;
+      }
+    } catch(e){ document.getElementById('verdict').textContent='API injoignable…'; }
+  }
+  refresh(); setInterval(refresh, 3000);
+</script>
+</body></html>"""
 
 
 def _page_security() -> str:

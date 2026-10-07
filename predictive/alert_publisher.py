@@ -53,9 +53,13 @@ def publier_alerte_mqtt(alerte: dict[str, Any]) -> bool:
     client = _connecter()
     if client is None:
         return False
+    details = alerte.get("details") or {}
     compacte = {
         "type": alerte.get("type", "ALERTE"),
-        "details": {"context": (alerte.get("details") or {}).get("context", "")},
+        "details": {
+            "context": details.get("context", ""),
+            "severity": details.get("severity", "WARNING"),  # pilote la LED (rouge si CRITICAL)
+        },
     }
     try:
         client.publish(ALERT_TOPIC, json.dumps(compacte, ensure_ascii=False))

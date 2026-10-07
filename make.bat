@@ -28,6 +28,7 @@ if "%1"=="train-ensemble" goto trainensemble
 if "%1"=="ollama-check"   goto ollamacheck
 if "%1"=="security-audit" goto securityaudit
 if "%1"=="security-fix"   goto securityfix
+if "%1"=="app"         goto app
 if "%1"=="start"       goto start
 if "%1"=="stop"        goto stop
 if "%1"=="test-ensemble"  goto testensemble
@@ -148,6 +149,10 @@ goto end
 %PY% scripts\security_audit.py --fix
 goto end
 
+:app
+%PY% -m app.sentinel_app
+goto end
+
 :start
 %PY% scripts\launch_all.py
 goto end
@@ -202,8 +207,9 @@ echo   api / api-stop / api-logs   API : lancer / arreter / logs
 echo   test / test-full   Healthcheck rapide / Test d'integration complet
 echo   config-esp32       Prepare secrets.h de l'ESP32 (IP auto) et l'ouvre
 echo   monitor-esp32      Lit le port serie de l'ESP32 (mesures en direct)
-echo   start              UNE commande : lance tout en fond + ouvre le dashboard
-echo   stop               Arrete tout ce que `start` a lance
+echo   app                APPLI bureau : fenetre unique (analyse + dashboard + webcam)
+echo   start              Lance tout en fond + ouvre le cockpit dans le navigateur
+echo   stop               Arrete tout ce que `start`/`app` a lance
 echo   setup-2fa          Cree un compte dashboard (login + 2FA)
 echo   security-audit     Suis-je securise ? (secrets, auth, XSS, MQTT, API)
 echo   security-fix       Applique les correctifs de securite surs
@@ -214,7 +220,7 @@ echo   test-materiel / check-materiel   Webcam + ESP32
 echo   broker / broker-stop        Broker MQTT dev (Docker)
 echo   simulate / check            Simulateur ESP32 / verif deps
 echo.
-echo   Premiere fois ?   make.bat install    puis    make.bat start
+echo   Premiere fois ?   make.bat install    puis    make.bat app
 goto end
 
 :end

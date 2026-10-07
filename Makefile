@@ -18,7 +18,7 @@ PIP := $(PY) -m pip
 DC  := docker compose -f docker-compose.dev.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap install check test test-full test-unit test-materiel check-materiel monitor-esp32 config-esp32 setup-2fa reset-db train-ensemble test-ensemble ollama-check security-audit security-fix start stop run-all broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
+.PHONY: help bootstrap install check test test-full test-unit test-materiel check-materiel monitor-esp32 config-esp32 setup-2fa reset-db train-ensemble test-ensemble ollama-check security-audit security-fix app start stop run-all broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
 
 bootstrap: ## 🧰 Machine neuve : installe les prérequis SYSTÈME (Python, Docker…) PUIS install
 	@bash scripts/bootstrap.sh
@@ -123,7 +123,10 @@ security-audit: ## 🛡️  « Suis-je sécurisé ? » : audite nos failles (sec
 security-fix: ## 🩹 Applique les correctifs de sécurité SÛRS (clé de session, etc.)
 	@$(PY) scripts/security_audit.py --fix
 
-start: ## ▶️  UNE commande : lance tout en arrière-plan + ouvre le dashboard dans le navigateur
+app: ## 🖥️  Application de bureau : fenêtre unique (analyse + dashboard + webcam en direct)
+	@$(PY) -m app.sentinel_app
+
+start: ## ▶️  UNE commande : lance tout en arrière-plan + ouvre le cockpit dans le navigateur
 	@$(PY) scripts/launch_all.py
 
 stop: ## ⏹️  Arrête tout ce qui a été lancé par `make start`

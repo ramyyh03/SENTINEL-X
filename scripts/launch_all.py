@@ -27,16 +27,20 @@ LOGS = PROJECT_ROOT / "logs"
 PORT = os.getenv("API_PORT", "3000")
 URL_DASHBOARD = f"http://localhost:{PORT}/dashboard"
 URL_SECURITE = f"http://localhost:{PORT}/security"
+URL_COCKPIT = f"http://localhost:{PORT}/app"
 URL_HEALTH = f"http://localhost:{PORT}/health"
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 IS_WINDOWS = os.name == "nt"
 ATTENTE_API_S = 25          # délai max d'attente que l'API réponde
 
 # Processus à lancer en arrière-plan : (nom, commande, fichier de log)
+# La vision (webcam) est incluse pour que la caméra soit LIVE dans l'app ;
+# elle se coupe proprement toute seule si aucune webcam n'est branchée.
 SERVICES = (
     ("api", [sys.executable, "-m", "api.server"], "api.log"),
     ("ingest", [sys.executable, "scripts/mqtt_client.py"], "ingest.log"),
     ("detect", [sys.executable, "-m", "predictive.main_brique6", "detect"], "detect.log"),
+    ("vision", [sys.executable, "-m", "vision.detector"], "vision.log"),
 )
 
 
@@ -145,7 +149,7 @@ def main() -> int:
     ollama_ok = ollama_pret()
 
     if api_ok:
-        webbrowser.open(URL_DASHBOARD)   # ouvre le dashboard dans le navigateur
+        webbrowser.open(URL_COCKPIT)   # cockpit tout-en-un (analyse + pages web)
     _rapport(broker_ok, api_ok, ollama_ok)
     return 0 if api_ok else 1
 
