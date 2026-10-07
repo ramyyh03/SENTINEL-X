@@ -25,6 +25,9 @@ import logging
 import os
 import sqlite3
 import time
+from datetime import timezone as _tz
+
+import requests
 from collections import defaultdict, deque
 from contextlib import closing
 from datetime import datetime, timezone
@@ -201,6 +204,28 @@ def create_app(store: AlertStore | None = None) -> Flask:
             return send_file(LATEST_FRAME, mimetype="image/jpeg")
         return ("", 204)  # pas encore d'image (vision pas lancée)
 
+    # --- Ollama (optionnel : diagnostic en langage naturel, dégradé si absent) ---
+    @app.get("/api/v1/ollama-status")
+    def ollama_status():
+        return jsonify(_ollama_status())
+
+    @app.post("/api/v1/ollama")
+    def ollama_chat():
+        data = request.get_json(silent=True) or {}
+        reponse = _ollama_ask(data.get("question", ""), data.get("context"))
+        code = 200 if reponse.get("answer") else 503
+        return jsonify(reponse), code
+
+    # --- Simulateur d'anomalie (démo) : injecte une alerte de test ---
+    @app.post("/api/v1/simulate")
+    @auth.login_required
+    def simulate():
+        type_anom = (request.get_json(silent=True) or {}).get("type", "gas_spike")
+        alerte = _alerte_simulee(type_anom)
+        magasin.insert_alert(alerte)
+        logger.info("Alerte SIMULÉE injectée : %s", type_anom)
+        return jsonify({"status": "injected", "type": type_anom}), 201
+
     return app
 
 
@@ -314,6 +339,22 @@ def _page_dashboard(alertes: list[dict]) -> str:
 <body>
   <h1>🛡️ SENTINEL-X — Dashboard des alertes</h1>
   <div class="sub">{len(alertes)} dernière(s) alerte(s) · rafraîchi toutes les 5 s · {maj} · <a href="/live" style="color:#58a6ff;text-decoration:none">→ capteurs</a> · <a href="/camera" style="color:#58a6ff;text-decoration:none">→ caméra</a> · <a href="/logout" style="color:#8b949e;text-decoration:none">déconnexion</a></div>
+  <div style="margin:10px 0;font-size:13px">🧪 <b>Simulateur</b> :
+    <button onclick="inj('gas_spike')">Fuite gaz</button>
+    <button onclick="inj('temp_jump')">Surchauffe</button>
+    <button onclick="inj('intrusion')">Intrusion</button>
+    &nbsp;·&nbsp;<span id="ostat">Ollama…</span>
+  </div>
+  <div style="margin:10px 0;font-size:13px">🤖
+    <input id="q" placeholder="Demander à Ollama (ex: pourquoi le gaz est haut ?)" style="width:55%;padding:6px;background:#1b1f23;color:#e6e6e6;border:1px solid #30363d;border-radius:6px">
+    <button onclick="ask()">Demander</button>
+    <div id="rep" style="margin-top:8px;color:#adbac7"></div>
+  </div>
+<script>
+function inj(t){{fetch('/api/v1/simulate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{type:t}})}}).then(function(){{location.reload();}});}}
+fetch('/api/v1/ollama-status').then(function(r){{return r.json();}}).then(function(d){{document.getElementById('ostat').textContent=d.online?'🟢 Ollama en ligne':'🔴 Ollama hors ligne';}});
+function ask(){{var q=document.getElementById('q').value;document.getElementById('rep').textContent='…';fetch('/api/v1/ollama',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{question:q}})}}).then(function(r){{return r.json();}}).then(function(d){{document.getElementById('rep').textContent=d.answer||('⚠️ '+(d.error||'')+' '+(d.suggestion||''));}});}}
+</script>
   <table>
     <thead><tr><th>Timestamp</th><th>Source</th><th>Type</th><th>Confiance</th><th>Sévérité</th><th>Détails</th></tr></thead>
     <tbody>{lignes}</tbody>
@@ -408,6 +449,58 @@ def _page_camera() -> str:
   };
 </script>
 </body></html>"""
+
+
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
+
+
+def _ollama_status() -> dict:
+    """Vérifie si Ollama tourne en local (dégradé sinon)."""
+    try:
+        r = requests.get(f"{OLLAMA_URL}/api/tags", timeout=2)
+        if r.status_code == 200:
+            return {"online": True, "models": [m.get("name") for m in r.json().get("models", [])]}
+    except requests.RequestException:
+        pass
+    return {"online": False, "hint": "Démarrer Ollama : ollama serve (puis ollama pull mistral)"}
+
+
+def _ollama_ask(question: str, context=None) -> dict:
+    """Pose une question à Ollama. Dégradé proprement si absent."""
+    if not question:
+        return {"error": "question vide"}
+    prompt = (f"Tu es expert en sécurité industrielle. Contexte capteurs : {context}. "
+              f"Question : {question}. Réponds en 1-2 phrases techniques et concrètes.")
+    try:
+        r = requests.post(f"{OLLAMA_URL}/api/generate",
+                          json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False,
+                                "options": {"temperature": 0.3}}, timeout=10)
+        if r.status_code == 200:
+            return {"answer": r.json().get("response", "").strip(), "source": OLLAMA_MODEL}
+    except requests.RequestException:
+        pass
+    return {"error": "Ollama non disponible", "suggestion": "ollama serve puis ollama pull mistral"}
+
+
+def _alerte_simulee(type_anom: str) -> dict:
+    """Construit une alerte de TEST (simulateur de démo)."""
+    import random
+    presets = {
+        "gas_spike": {"gas": 3500, "temp": 24, "humidity": 45, "presence": 0, "ctx": "Pic de gaz (fuite ?)"},
+        "temp_jump": {"gas": 150, "temp": 55, "humidity": 30, "presence": 0, "ctx": "Surchauffe (température anormale)"},
+        "intrusion": {"gas": 120, "temp": 23, "humidity": 50, "presence": 1, "ctx": "Présence inattendue"},
+    }
+    p = presets.get(type_anom, presets["gas_spike"])
+    return {
+        "source": "ia_predictive", "type": "anomaly_detected",
+        "confidence": round(random.uniform(0.8, 0.95), 2),
+        "timestamp": datetime.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "details": {"severity": "CRITICAL", "context": f"[SIMULÉ] {p['ctx']}",
+                    "current_values": {"temp": p["temp"], "humidity": p["humidity"],
+                                       "gas": p["gas"], "presence": p["presence"]},
+                    "recommendation": "Alerte de test (simulateur)"},
+    }
 
 
 def main() -> int:

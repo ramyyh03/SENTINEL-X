@@ -25,6 +25,7 @@ if "%1"=="api"         goto api
 if "%1"=="api-stop"    goto apistop
 if "%1"=="api-logs"    goto apilogs
 if "%1"=="train-ensemble" goto trainensemble
+if "%1"=="ollama-check"   goto ollamacheck
 if "%1"=="test-ensemble"  goto testensemble
 if "%1"=="train"       goto train
 if "%1"=="detect"      goto detect
@@ -129,6 +130,10 @@ goto end
 
 :trainensemble
 %PY% scripts\train_ensemble.py
+goto end
+
+:ollamacheck
+%PY% scripts\ollama_health_check.py
 goto end
 
 :testensemble
