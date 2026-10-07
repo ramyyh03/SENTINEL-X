@@ -16,6 +16,7 @@ if "%1"=="test-full"   goto testfull
 if "%1"=="test-materiel" goto testmateriel
 if "%1"=="check-materiel" goto checkmateriel
 if "%1"=="monitor-esp32" goto monitoresp32
+if "%1"=="config-esp32" goto configesp32
 if "%1"=="setup-2fa"   goto setup2fa
 if "%1"=="reset-db"    goto resetdb
 if "%1"=="run-all"     goto runall
@@ -73,6 +74,10 @@ goto end
 
 :monitoresp32
 %PY% scripts\esp32_monitor.py
+goto end
+
+:configesp32
+%PY% scripts\config_esp32.py
 goto end
 
 :setup2fa
