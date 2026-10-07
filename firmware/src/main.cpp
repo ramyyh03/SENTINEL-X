@@ -458,7 +458,22 @@ void majStatutLeds() {
 // ---------------------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
+  delay(300);
   Wire.begin(21, 22);  // I²C : SDA=21, SCL=22
+
+  // Scanner I²C de diagnostic : liste les périphériques présents sur le bus.
+  Serial.println("--- Scan I2C (SDA=GPIO21, SCL=GPIO22) ---");
+  int nbI2C = 0;
+  for (byte addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      Serial.printf("  peripherique I2C trouve a 0x%02X\n", addr);
+      nbI2C++;
+    }
+  }
+  if (nbI2C == 0)
+    Serial.println("  AUCUN peripherique I2C ! -> SDA/SCL inverses ou debranches, ou 3V3/GND absents.");
+  Serial.println("-----------------------------------------");
 
   // Essaie les deux adresses I²C usuelles du SSD1306 (0x3C puis 0x3D).
   // Si l'OLED ne répond pas : on NE BLOQUE PAS — capteurs/WiFi/MQTT/LEDs continuent.
