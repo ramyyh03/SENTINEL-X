@@ -167,28 +167,31 @@ goto end
 :flashbase
 echo === Flash ESP32 : firmware de base (capteurs + OLED) ===
 set "PIO=pio"
-where pio >nul 2>&1 || set "PIO=%USERPROFILE%\.platformio\penv\Scripts\pio.exe"
+if exist "%USERPROFILE%\.platformio\penv\Scripts\pio.exe" set "PIO=%USERPROFILE%\.platformio\penv\Scripts\pio.exe"
+if exist "venv\Scripts\pio.exe" set "PIO=venv\Scripts\pio.exe"
 echo PlatformIO utilise : %PIO%
 "%PIO%" run -d firmware -e esp32dev-secrets -t upload
-if errorlevel 1 echo [X] Echec. PlatformIO introuvable ? Installe-le : %PY% -m pip install platformio
+if errorlevel 1 echo [X] Echec. PlatformIO installe ? -^> %PY% -m pip install platformio   (puis reessaie)
 goto end
 
 :flashleds
 echo === Flash ESP32 : capteurs + OLED + LEDs de statut ===
 set "PIO=pio"
-where pio >nul 2>&1 || set "PIO=%USERPROFILE%\.platformio\penv\Scripts\pio.exe"
+if exist "%USERPROFILE%\.platformio\penv\Scripts\pio.exe" set "PIO=%USERPROFILE%\.platformio\penv\Scripts\pio.exe"
+if exist "venv\Scripts\pio.exe" set "PIO=venv\Scripts\pio.exe"
 echo PlatformIO utilise : %PIO%
 "%PIO%" run -d firmware -e esp32dev-secrets-leds -t upload
-if errorlevel 1 echo [X] Echec. PlatformIO introuvable ? Installe-le : %PY% -m pip install platformio
+if errorlevel 1 echo [X] Echec. PlatformIO installe ? -^> %PY% -m pip install platformio   (puis reessaie)
 goto end
 
 :flashfull
 echo === Flash ESP32 : COMPLET (OLED-alertes + LEDs + HMAC) ===
 set "PIO=pio"
-where pio >nul 2>&1 || set "PIO=%USERPROFILE%\.platformio\penv\Scripts\pio.exe"
+if exist "%USERPROFILE%\.platformio\penv\Scripts\pio.exe" set "PIO=%USERPROFILE%\.platformio\penv\Scripts\pio.exe"
+if exist "venv\Scripts\pio.exe" set "PIO=venv\Scripts\pio.exe"
 echo PlatformIO utilise : %PIO%
 "%PIO%" run -d firmware -e esp32dev-full -t upload
-if errorlevel 1 echo [X] Echec. PlatformIO introuvable ? Installe-le : %PY% -m pip install platformio
+if errorlevel 1 echo [X] Echec. PlatformIO installe ? -^> %PY% -m pip install platformio   (puis reessaie)
 goto end
 
 :testensemble
