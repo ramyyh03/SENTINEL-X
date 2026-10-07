@@ -26,8 +26,22 @@ bool oledInit = false;
 
 void setup() {
   Serial.begin(115200);
-  delay(400);
+  delay(500);
+  // On AFFICHE tout de suite, AVANT de toucher l'I2C (pour toujours voir du texte).
+  Serial.println();
+  Serial.println("=====================================================");
+  Serial.println("   SENTINEL-X - DIAGNOSTIC MATERIEL (sans WiFi)");
+  Serial.println("   Branche un composant a la fois, regarde ci-dessous.");
+  Serial.println("=====================================================");
+  Serial.flush();
+
+  // Résistances internes de tirage : empêchent le bus I2C de "flotter" et de
+  // bloquer quand aucune OLED n'est branchée.
+  pinMode(21, INPUT_PULLUP);
+  pinMode(22, INPUT_PULLUP);
   Wire.begin(21, 22);
+  Wire.setTimeOut(50);       // ms : jamais de blocage I2C
+
   dht.begin();
   pinMode(PIN_PIR, INPUT);
   pinMode(PIN_LED_VERT, OUTPUT);
@@ -36,12 +50,7 @@ void setup() {
   analogReadResolution(12);
   oledInit = display.begin(SSD1306_SWITCHCAPVCC, 0x3C)
           || display.begin(SSD1306_SWITCHCAPVCC, 0x3D);
-
-  Serial.println();
-  Serial.println("=====================================================");
-  Serial.println("   SENTINEL-X - DIAGNOSTIC MATERIEL (sans WiFi)");
-  Serial.println("   Branche un composant a la fois, regarde ci-dessous.");
-  Serial.println("=====================================================");
+  Serial.printf("Init OLED : %s\n", oledInit ? "OK" : "aucune OLED pour l'instant");
 }
 
 void loop() {
