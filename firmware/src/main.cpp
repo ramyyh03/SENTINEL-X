@@ -128,6 +128,13 @@ void configurerWiFi() {
   // ---- Config EN DUR (secrets.h) : aucun portail, aucun téléphone ----
   strncpy(brokerIp, BROKER_IP, sizeof(brokerIp) - 1);
   brokerIp[sizeof(brokerIp) - 1] = '\0';
+#ifndef DEV_PLAIN_MQTT
+  // Variante sécurisée (esp32dev-secrets-tls) : compte MQTT lu dans secrets.h
+  strncpy(mqttUser, MQTT_USER, sizeof(mqttUser) - 1);
+  mqttUser[sizeof(mqttUser) - 1] = '\0';
+  strncpy(mqttPass, MQTT_PASSWORD, sizeof(mqttPass) - 1);
+  mqttPass[sizeof(mqttPass) - 1] = '\0';
+#endif
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   oledLignes("WiFi (secrets)", WIFI_SSID, "connexion...");
