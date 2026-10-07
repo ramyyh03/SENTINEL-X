@@ -35,6 +35,7 @@ if "%1"=="flash-base"  goto flashbase
 if "%1"=="flash-leds"  goto flashleds
 if "%1"=="flash-full"  goto flashfull
 if "%1"=="flash-diag"  goto flashdiag
+if "%1"=="monitor"     goto monitorlive
 if "%1"=="test-ensemble"  goto testensemble
 if "%1"=="train"       goto train
 if "%1"=="detect"      goto detect
@@ -205,6 +206,14 @@ echo PlatformIO utilise : %PIO%
 if errorlevel 1 echo [X] Echec. PlatformIO installe ? -^> %PY% -m pip install platformio   (puis reessaie)
 goto end
 
+:monitorlive
+echo === Moniteur serie EN CONTINU (Ctrl+C pour arreter) ===
+set "PIO=pio"
+if exist "%USERPROFILE%\.platformio\penv\Scripts\pio.exe" set "PIO=%USERPROFILE%\.platformio\penv\Scripts\pio.exe"
+if exist "venv\Scripts\pio.exe" set "PIO=venv\Scripts\pio.exe"
+"%PIO%" device monitor -b 115200
+goto end
+
 :testensemble
 %PY% -m pytest tests\test_ensemble.py -q
 goto end
@@ -258,6 +267,7 @@ echo   flash-base         Flashe l'ESP32 : capteurs + OLED (verifie le materiel)
 echo   flash-leds         Flashe l'ESP32 : capteurs + OLED + LEDs de statut
 echo   flash-full         Flashe l'ESP32 : COMPLET (OLED-alertes + LEDs + HMAC)
 echo   flash-diag         Flashe l'ESP32 : DIAGNOSTIC (sans WiFi, detecte chaque composant)
+echo   monitor            Moniteur serie EN CONTINU (Ctrl+C pour arreter)
 echo   setup-2fa          Cree un compte dashboard (login + 2FA)
 echo   security-audit     Suis-je securise ? (secrets, auth, XSS, MQTT, API)
 echo   security-fix       Applique les correctifs de securite surs
