@@ -21,6 +21,8 @@ if "%1"=="setup-2fa"   goto setup2fa
 if "%1"=="reset-db"    goto resetdb
 if "%1"=="run-all"     goto runall
 if "%1"=="api"         goto api
+if "%1"=="api-stop"    goto apistop
+if "%1"=="api-logs"    goto apilogs
 if "%1"=="train"       goto train
 if "%1"=="detect"      goto detect
 if "%1"=="replay"      goto replay
@@ -108,6 +110,16 @@ echo API sur http://localhost:3000/dashboard  (Ctrl+C pour arreter)
 %PY% -m api.server
 goto end
 
+:apistop
+echo Arret de l'API (port 3000)...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :3000 ^| findstr LISTENING') do taskkill /F /PID %%a >nul 2>&1
+echo [OK] API arretee (si elle tournait).
+goto end
+
+:apilogs
+powershell -NoProfile -Command "Get-Content logs\api.log -Wait -Tail 20"
+goto end
+
 :train
 %PY% -m predictive.main_brique6 train
 goto end
@@ -145,19 +157,20 @@ goto end
 echo.
 echo SENTINEL-X - commandes Windows :  make.bat ^<cible^>
 echo   install            Setup complet (venv + deps + dossiers + .env)
-echo   test-full          Test d'integration complet (demarre broker + API)
-echo   test               Healthcheck rapide (in-process)
-echo   check              Verifie les dependances
-echo   api                Lance l'API (http://localhost:3000/dashboard)
-echo   train              Entraine l'IA predictive (Brique 6)
-echo   detect             Detection d'anomalies temps reel
-echo   replay             Test IA autonome (sans DB ni broker)
-echo   detect-vision      Vision (webcam reelle)
-echo   detect-vision-sim  Vision en simulation (sans webcam)
-echo   broker / broker-stop   Broker MQTT dev (Docker)
-echo   simulate           Simulateur ESP32
+echo   run-all            Lance TOUT (broker + API + ingestion + detection + vision)
+echo   api / api-stop / api-logs   API : lancer / arreter / logs
+echo   test / test-full   Healthcheck rapide / Test d'integration complet
+echo   config-esp32       Prepare secrets.h de l'ESP32 (IP auto) et l'ouvre
+echo   monitor-esp32      Lit le port serie de l'ESP32 (mesures en direct)
+echo   setup-2fa          Cree un compte dashboard (login + 2FA)
+echo   reset-db           Vide la base (enleve les donnees de test)
+echo   train / detect / replay     IA predictive (Brique 6)
+echo   detect-vision / -sim        Vision webcam (reelle / simulee)
+echo   test-materiel / check-materiel   Webcam + ESP32
+echo   broker / broker-stop        Broker MQTT dev (Docker)
+echo   simulate / check            Simulateur ESP32 / verif deps
 echo.
-echo   Premiere fois ?   make.bat install    puis    make.bat test-full
+echo   Premiere fois ?   make.bat install    puis    make.bat run-all
 goto end
 
 :end
