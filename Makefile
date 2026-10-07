@@ -18,7 +18,7 @@ PIP := $(PY) -m pip
 DC  := docker compose -f docker-compose.dev.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap install check test test-full test-materiel check-materiel monitor-esp32 config-esp32 setup-2fa reset-db run-all broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
+.PHONY: help bootstrap install check test test-full test-unit test-materiel check-materiel monitor-esp32 config-esp32 setup-2fa reset-db run-all broker broker-stop run simulate demo train detect replay detect-vision detect-vision-sim detect-vision-show api api-stop api-logs
 
 bootstrap: ## 🧰 Machine neuve : installe les prérequis SYSTÈME (Python, Docker…) PUIS install
 	@bash scripts/bootstrap.sh
@@ -57,6 +57,9 @@ check: ## Vérifie que toutes les dépendances sont installées (sans rien insta
 test: ## 🩺 Rapport de santé rapide (deps, briques 3/5/6/7, firmware, sécu) — in-process
 	@test -x $(PY) || { echo "❌ Pas de venv — lance d'abord : make install"; exit 1; }
 	@$(PY) scripts/healthcheck.py
+
+test-unit: ## 🧫 Tests unitaires pytest (ex. santé capteurs, Brique 6.2)
+	@$(PY) -m pytest tests/ -q
 
 test-full: ## 🧪 Test d'INTÉGRATION complet : démarre broker+API, teste la chaîne E2E réelle
 	@test -x $(PY) || { echo "❌ Pas de venv — lance d'abord : make install"; exit 1; }

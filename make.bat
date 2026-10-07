@@ -13,6 +13,7 @@ if "%1"=="install"     goto install
 if "%1"=="check"       goto check
 if "%1"=="test"        goto test
 if "%1"=="test-full"   goto testfull
+if "%1"=="test-unit"   goto testunit
 if "%1"=="test-materiel" goto testmateriel
 if "%1"=="check-materiel" goto checkmateriel
 if "%1"=="monitor-esp32" goto monitoresp32
@@ -64,6 +65,10 @@ goto end
 
 :testfull
 %PY% scripts\test_full_integration.py
+goto end
+
+:testunit
+%PY% -m pytest tests\ -q
 goto end
 
 :testmateriel

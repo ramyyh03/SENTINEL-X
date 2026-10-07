@@ -29,6 +29,10 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from predictive.collector import SQLiteCollector  # noqa: E402 (après ajustement sys.path)
+from predictive.sensor_health import SensorHealthMonitor  # noqa: E402
+
+# Surveillance santé des capteurs (Brique 6.2) — partagée entre les messages
+_health_monitor = SensorHealthMonitor()
 
 # --- Constantes (pas de valeurs magiques dispersées) ---
 DEFAULT_HOST = "localhost"
@@ -144,6 +148,15 @@ def on_message(client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage) -> Non
     row_id = collector.insert_reading(data)
     if row_id is not None:
         log("DB", Fore.BLUE, f"Données stockées en SQLite (id={row_id})")
+
+    # Brique 6.2 — santé des capteurs (jamais bloquant pour l'ingestion)
+    try:
+        sante = _health_monitor.update(data)
+        for alerte in sante["alerts"]:
+            couleur = Fore.RED if alerte.severity == "CRITICAL" else Fore.YELLOW
+            log("SANTÉ", couleur, f"{alerte.name} [{alerte.status}] — {alerte.reason}")
+    except Exception as exc:  # noqa: BLE001 — robustesse : ne jamais tuer la réception
+        log("WARN", Fore.YELLOW, f"Santé capteurs non évaluée : {exc}")
 
 
 def main() -> int:
