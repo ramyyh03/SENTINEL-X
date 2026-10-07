@@ -198,6 +198,11 @@ def create_app(store: AlertStore | None = None) -> Flask:
     def camera():
         return _page_camera()
 
+    @app.get("/security")
+    @auth.login_required
+    def security():
+        return _page_security()
+
     @app.get("/camera/frame")
     @auth.login_required
     def camera_frame():
@@ -296,6 +301,71 @@ def _lire_capteurs(db_path, limit: int = 20) -> list[dict]:
         return []  # table pas encore créée (aucune donnée capteur)
 
 
+_SECU_COULEURS = {"CRITICAL": "#e74c3c", "HIGH": "#e74c3c", "MEDIUM": "#f39c12",
+                  "LOW": "#3498db", "OK": "#2ecc71"}
+
+
+def _page_security() -> str:
+    """Page web « Suis-je sécurisé ? » : lance l'audit et affiche le rapport."""
+    try:
+        from scripts.security_audit import lancer_controles
+        constats = lancer_controles()
+    except Exception as exc:  # noqa: BLE001 — l'audit ne doit jamais casser l'UI
+        return f"<p style='color:#e74c3c'>Audit indisponible : {html.escape(str(exc))}</p>"
+
+    echecs = [c for c in constats if not c.ok]
+    critiques = [c for c in echecs if c.gravite in ("CRITICAL", "HIGH")]
+    if not echecs:
+        verdict, vcoul = "✅ Système sain", "#2ecc71"
+    elif critiques:
+        verdict, vcoul = "⚠️ NON SÉCURISÉ", "#e74c3c"
+    else:
+        verdict, vcoul = "🟡 À renforcer", "#f39c12"
+
+    lignes = ""
+    for c in constats:
+        coul = _SECU_COULEURS.get(c.gravite, "#7f8c8d")
+        icone = "✓" if c.ok else "✗"
+        correctif = (f"<div class='fix'>→ {html.escape(c.correctif)}</div>"
+                     if not c.ok and c.correctif else "")
+        lignes += (
+            f"<tr>"
+            f"<td style='text-align:center;color:{coul};font-weight:700'>{icone}</td>"
+            f"<td>{html.escape(c.controle)}</td>"
+            f"<td><span class='badge' style='background:{coul}'>{c.gravite}</span></td>"
+            f"<td class='details'>{html.escape(c.message)}{correctif}</td>"
+            f"</tr>")
+
+    maj = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+    return f"""<!doctype html>
+<html lang="fr"><head>
+<meta charset="utf-8">
+<title>SENTINEL-X — Sécurité</title>
+<style>
+  body {{ font-family: system-ui, sans-serif; background:#1b1f23; color:#e6e6e6; margin:0; padding:24px; }}
+  h1 {{ font-size:20px; margin:0 0 4px; }}
+  .sub {{ color:#8b949e; font-size:13px; margin-bottom:16px; }}
+  .verdict {{ font-size:18px; font-weight:700; color:{vcoul}; margin:12px 0; }}
+  table {{ width:100%; border-collapse:collapse; background:#24292e; border-radius:8px; overflow:hidden; }}
+  th, td {{ padding:10px 12px; text-align:left; font-size:13px; border-bottom:1px solid #30363d; vertical-align:top; }}
+  th {{ background:#2d333b; color:#adbac7; text-transform:uppercase; font-size:11px; letter-spacing:.5px; }}
+  .badge {{ color:#111; font-weight:700; padding:2px 8px; border-radius:10px; font-size:11px; }}
+  .details {{ color:#adbac7; max-width:520px; }}
+  .fix {{ color:#8b949e; font-size:12px; margin-top:4px; font-style:italic; }}
+  button {{ background:#2d333b; color:#e6e6e6; border:1px solid #30363d; border-radius:6px; padding:6px 10px; cursor:pointer; }}
+</style></head>
+<body>
+  <h1>🛡️ SENTINEL-X — Suis-je sécurisé ?</h1>
+  <div class="sub">Audit {maj} · <a href="/dashboard" style="color:#58a6ff;text-decoration:none">→ alertes</a> · <a href="/live" style="color:#58a6ff;text-decoration:none">→ capteurs</a> · <a href="/logout" style="color:#8b949e;text-decoration:none">déconnexion</a></div>
+  <div class="verdict">{verdict} — {len(echecs)} point(s), dont {len(critiques)} critique(s)/élevé(s)</div>
+  <table>
+    <tr><th></th><th>Contrôle</th><th>Gravité</th><th>Détail & correctif</th></tr>
+    {lignes}
+  </table>
+  <p style="margin-top:14px"><button onclick="location.reload()">↻ Relancer l'audit</button></p>
+</body></html>"""
+
+
 def _page_dashboard(alertes: list[dict]) -> str:
     """Construit la page HTML du dashboard (CSS inline, auto-refresh 5 s)."""
     lignes = ""
@@ -345,7 +415,7 @@ def _page_dashboard(alertes: list[dict]) -> str:
 </style></head>
 <body>
   <h1>🛡️ SENTINEL-X — Dashboard des alertes</h1>
-  <div class="sub">{len(alertes)} dernière(s) alerte(s) · rafraîchi toutes les 5 s · {maj} · <a href="/live" style="color:#58a6ff;text-decoration:none">→ capteurs</a> · <a href="/camera" style="color:#58a6ff;text-decoration:none">→ caméra</a> · <a href="/logout" style="color:#8b949e;text-decoration:none">déconnexion</a></div>
+  <div class="sub">{len(alertes)} dernière(s) alerte(s) · rafraîchi toutes les 5 s · {maj} · <a href="/live" style="color:#58a6ff;text-decoration:none">→ capteurs</a> · <a href="/camera" style="color:#58a6ff;text-decoration:none">→ caméra</a> · <a href="/security" style="color:#58a6ff;text-decoration:none">→ sécurité</a> · <a href="/logout" style="color:#8b949e;text-decoration:none">déconnexion</a></div>
   <div style="margin:10px 0;font-size:13px">🧪 <b>Simulateur</b> :
     <button onclick="inj('gas_spike')">Fuite gaz</button>
     <button onclick="inj('temp_jump')">Surchauffe</button>
