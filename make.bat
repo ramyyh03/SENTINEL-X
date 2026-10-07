@@ -164,31 +164,31 @@ goto end
 %PY% scripts\launch_all.py --stop
 goto end
 
-REM --- Flash ESP32 : trouve pio automatiquement (PATH ou .platformio) ---
-:findpio
-set "PIO=pio"
-where pio >nul 2>&1 && goto :eof
-if exist "%USERPROFILE%\.platformio\penv\Scripts\pio.exe" set "PIO=%USERPROFILE%\.platformio\penv\Scripts\pio.exe" & goto :eof
-echo [X] PlatformIO introuvable. Installe l'extension PlatformIO dans VS Code,
-echo     ou : %PY% -m pip install platformio   puis reessaie.
-exit /b 1
-
 :flashbase
-call :findpio || goto end
-echo Flash ESP32 : firmware de base (capteurs + OLED)...
+echo === Flash ESP32 : firmware de base (capteurs + OLED) ===
+set "PIO=pio"
+where pio >nul 2>&1 || set "PIO=%USERPROFILE%\.platformio\penv\Scripts\pio.exe"
+echo PlatformIO utilise : %PIO%
 "%PIO%" run -d firmware -e esp32dev-secrets -t upload
+if errorlevel 1 echo [X] Echec. PlatformIO introuvable ? Installe-le : %PY% -m pip install platformio
 goto end
 
 :flashleds
-call :findpio || goto end
-echo Flash ESP32 : capteurs + OLED + LEDs de statut...
+echo === Flash ESP32 : capteurs + OLED + LEDs de statut ===
+set "PIO=pio"
+where pio >nul 2>&1 || set "PIO=%USERPROFILE%\.platformio\penv\Scripts\pio.exe"
+echo PlatformIO utilise : %PIO%
 "%PIO%" run -d firmware -e esp32dev-secrets-leds -t upload
+if errorlevel 1 echo [X] Echec. PlatformIO introuvable ? Installe-le : %PY% -m pip install platformio
 goto end
 
 :flashfull
-call :findpio || goto end
-echo Flash ESP32 : COMPLET (capteurs + OLED-alertes + LEDs + HMAC)...
+echo === Flash ESP32 : COMPLET (OLED-alertes + LEDs + HMAC) ===
+set "PIO=pio"
+where pio >nul 2>&1 || set "PIO=%USERPROFILE%\.platformio\penv\Scripts\pio.exe"
+echo PlatformIO utilise : %PIO%
 "%PIO%" run -d firmware -e esp32dev-full -t upload
+if errorlevel 1 echo [X] Echec. PlatformIO introuvable ? Installe-le : %PY% -m pip install platformio
 goto end
 
 :testensemble
