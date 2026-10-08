@@ -26,6 +26,7 @@ import logging
 import os
 import socket
 import sqlite3
+import threading
 import time
 from datetime import timezone as _tz
 
@@ -132,6 +133,10 @@ def create_app(store: AlertStore | None = None) -> Flask:
     app = Flask(__name__)
     app.secret_key = _secret_key()  # nécessaire aux sessions (login)
     magasin = store or AlertStore()
+
+    # Préchauffe Mistral en arrière-plan : charge le modèle en RAM dès le
+    # démarrage pour que le 1er « Tester l'IA » réponde vite (sinon ~30-60 s).
+    _demarrer_prechauffe_ollama()
 
     @app.get("/login")
     def login():
@@ -457,7 +462,7 @@ def _page_cockpit() -> str:
   function majCam(){ document.getElementById('cam').src = '/camera/frame?t=' + Date.now(); }
   async function testIA(){
     const out = document.getElementById('iaout'), btn = document.getElementById('iabtn');
-    out.textContent = 'interrogation de Mistral…'; btn.disabled = true;
+    out.textContent = '⏳ Mistral réfléchit… (patiente ~15-30 s)'; btn.disabled = true;
     try {
       const r = await fetch('/api/v1/ollama', {method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({question:'Confirme en une phrase que le système de surveillance est opérationnel.'})});
@@ -770,6 +775,21 @@ def _ollama_status() -> dict:
     except requests.RequestException:
         pass
     return {"online": False, "hint": "Démarrer Ollama : ollama serve (puis ollama pull mistral)"}
+
+
+def _prechauffe_ollama() -> None:
+    """Charge le modèle Mistral en RAM (1 requête bidon). Silencieux si absent."""
+    try:
+        requests.post(f"{OLLAMA_URL}/api/generate",
+                      json={"model": OLLAMA_MODEL, "prompt": "ok", "stream": False,
+                            "options": {"num_predict": 1}}, timeout=OLLAMA_TIMEOUT)
+    except requests.RequestException:
+        pass
+
+
+def _demarrer_prechauffe_ollama() -> None:
+    """Lance le préchauffage dans un thread démon (ne bloque pas le démarrage)."""
+    threading.Thread(target=_prechauffe_ollama, daemon=True).start()
 
 
 def _ollama_ask(question: str, context=None) -> dict:
