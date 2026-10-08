@@ -168,6 +168,19 @@ void configurerWiFi() {
   brokerIp[sizeof(brokerIp) - 1] = '\0';
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);   // reconnexion automatique en tâche de fond
+
+  // Diagnostic : liste les réseaux visibles -> on voit si le hotspot est là.
+  Serial.printf("Je cherche le reseau : \"%s\"\n", WIFI_SSID);
+  int nRes = WiFi.scanNetworks();
+  bool hotspotVu = false;
+  Serial.printf("Scan WiFi : %d reseau(x) visible(s) :\n", nRes);
+  for (int i = 0; i < nRes; i++) {
+    Serial.printf("   - \"%s\"  (signal %d dBm)\n", WiFi.SSID(i).c_str(), WiFi.RSSI(i));
+    if (WiFi.SSID(i) == String(WIFI_SSID)) hotspotVu = true;
+  }
+  Serial.println(hotspotVu ? ">>> Hotspot TROUVE dans le scan."
+                           : ">>> Hotspot ABSENT du scan ! (nom different ? hotspot eteint ? trop loin ?)");
+
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   oledLignes("WiFi (secrets)", WIFI_SSID, "connexion...");
   unsigned long t0 = millis();
@@ -178,7 +191,10 @@ void configurerWiFi() {
   if (WiFi.status() != WL_CONNECTED) {
     // PAS de redémarrage : le système continue EN LOCAL (capteurs/OLED/LEDs) et
     // le WiFi se reconnecte tout seul en arrière-plan. Évite tout reboot-loop.
-    Serial.println("\nWiFi pas encore connecte - on CONTINUE (local), reconnexion auto en fond.");
+    // status : 1=SSID introuvable, 4=mot de passe/association refuse, 6=echec.
+    Serial.printf("\nWiFi pas connecte (status=%d). ", WiFi.status());
+    Serial.println(hotspotVu ? "Hotspot vu mais refuse -> verifie le MOT DE PASSE."
+                             : "Hotspot pas vu -> nom exact ? allume ? a portee ?");
     oledLignes("WiFi hors ligne", "capteurs OK", "reconnexion...");
     return;
   }
