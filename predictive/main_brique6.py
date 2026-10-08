@@ -30,6 +30,7 @@ from dotenv import load_dotenv
 from predictive import arima_trainer
 from predictive.alert_aggregator import Agregateur
 from predictive.alert_generator import generer_alerte
+from predictive.correlation import analyser
 from predictive.anomaly_detector import Detecteur
 from predictive.baseline_analyzer import baseline
 
@@ -122,11 +123,21 @@ def _traiter_lecture(detecteur: Detecteur, agregateur: Agregateur,
                 f"{row['timestamp']} score={detection['anomaly_score']} "
                 f"votes={detection['model_votes']} anomaly={detection['is_anomaly']}")
 
-    if not detection["is_anomaly"]:
+    # FUSION MULTI-CAPTEURS : on croise tendances (temp/humidité) + caméra.
+    valeurs = {k: row[k] for k in ("temp", "humidity", "gas", "presence")}
+    scenario = analyser(valeurs, _tendances(buffer), _cam_personnes())
+    danger = scenario.nom != "NORMAL"
+
+    # On alerte si l'IA détecte une anomalie OU si un scénario dangereux est identifié.
+    if not detection["is_anomaly"] and not danger:
         return
 
-    valeurs = {k: row[k] for k in ("temp", "humidity", "gas", "presence")}
     alerte = generer_alerte(detection, valeurs, baseline(df), row["timestamp"])
+    if danger:   # la corrélation scientifique prime sur le libellé générique
+        alerte["details"]["severity"] = scenario.severite
+        alerte["details"]["context"] = scenario.contexte
+        alerte["details"]["recommendation"] = scenario.recommandation
+        alerte["details"]["scenario"] = scenario.nom
     maintenant = _parse_ts(row["timestamp"])
     emise = agregateur.soumettre(alerte, maintenant)
 
@@ -139,6 +150,34 @@ def _traiter_lecture(detecteur: Detecteur, agregateur: Agregateur,
         f"score={emise['confidence']} [{sev}] → {emise['details']['context']}")
     _append_log("alerts.log", json.dumps(emise, ensure_ascii=False))
     poster_alerte(emise)   # l'API rediffuse vers l'ESP32 (OLED+LEDs) à la réception
+
+
+TENDANCE_FENETRE = 15        # nb de lectures (~30 s) pour estimer les tendances
+VISION_STATUS = PROJECT_ROOT / "data" / "vision_status.json"
+CAM_FRAIS_S = 5
+
+
+def _tendances(buffer: deque) -> dict:
+    """Variations récentes de température et d'humidité (°C et %) sur la fenêtre."""
+    if len(buffer) < 3:
+        return {"dtemp": 0.0, "dhum": 0.0}
+    recent = list(buffer)[-TENDANCE_FENETRE:]
+    vieux, neuf = recent[0], recent[-1]
+    try:
+        return {"dtemp": float(neuf["temp"]) - float(vieux["temp"]),
+                "dhum": float(neuf["humidity"]) - float(vieux["humidity"])}
+    except (KeyError, TypeError, ValueError):
+        return {"dtemp": 0.0, "dhum": 0.0}
+
+
+def _cam_personnes() -> int:
+    """Nombre de personnes vues par la caméra en direct (0 si statut absent/vieux)."""
+    try:
+        if not VISION_STATUS.exists() or time.time() - VISION_STATUS.stat().st_mtime > CAM_FRAIS_S:
+            return 0
+        return int(json.loads(VISION_STATUS.read_text(encoding="utf-8")).get("persons", 0))
+    except (OSError, ValueError, TypeError):
+        return 0
 
 
 def _parse_ts(ts: str) -> datetime:
