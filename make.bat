@@ -21,6 +21,8 @@ if "%1"=="config-esp32" goto configesp32
 if "%1"=="setup-2fa"   goto setup2fa
 if "%1"=="reset-db"    goto resetdb
 if "%1"=="run-all"     goto runall
+if "%1"=="run-all-secure" goto runallsecure
+if "%1"=="broker-secure"  goto brokersecure
 if "%1"=="api"         goto api
 if "%1"=="api-stop"    goto apistop
 if "%1"=="api-logs"    goto apilogs
@@ -121,6 +123,26 @@ echo   Capteurs en direct: http://localhost:3000/live
 echo   Camera (vision)   : http://localhost:3000/camera
 echo.
 echo   (4 fenetres ouvertes ; ferme-les avec Ctrl+C pour tout arreter)
+goto end
+
+:runallsecure
+echo Lancement SECURISE de SENTINEL-X (broker MQTTS 8883, aucun port en clair)...
+docker compose -f docker-compose.dev.yml down
+docker compose -f docker/docker-compose.yml up -d
+start "SENTINEL - API" cmd /k "%PY% -m api.server"
+start "SENTINEL - Ingestion MQTT" cmd /k "%PY% scripts\mqtt_client.py"
+start "SENTINEL - Detection" cmd /k "%PY% -m predictive.main_brique6 detect"
+start "SENTINEL - Vision webcam" cmd /k "%PY% -m vision.detector --camera 1"
+echo.
+echo   Broker : MQTTS 8883 uniquement (le broker dev 1883 a ete arrete)
+echo   .env doit contenir MQTT_PORT=8883 + MQTT_USER + MQTT_PASSWORD
+echo   Dashboard : http://localhost:3000/dashboard
+goto end
+
+:brokersecure
+docker compose -f docker-compose.dev.yml down
+docker compose -f docker/docker-compose.yml up -d
+echo [OK] Broker MQTTS lance sur le port 8883 (broker dev 1883 arrete)
 goto end
 
 :api
@@ -277,6 +299,8 @@ echo   detect-vision / -sim        Vision webcam (reelle / simulee)
 echo   test-materiel / check-materiel   Webcam + ESP32
 echo   broker / broker-stop        Broker MQTT dev (Docker)
 echo   simulate / check            Simulateur ESP32 / verif deps
+echo   broker-secure          Broker MQTTS 8883 (arrete le broker dev)
+echo   run-all-secure         Comme run-all, mais en MQTTS (demo securisee)
 echo.
 echo   Premiere fois ?   make.bat install    puis    make.bat app
 goto end

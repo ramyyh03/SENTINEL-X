@@ -15,7 +15,7 @@ from functools import wraps
 from pathlib import Path
 
 import pyotp
-from flask import redirect, session, url_for
+from flask import redirect, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -66,13 +66,36 @@ def verifier(username: str, password: str, code: str) -> bool:
     return pyotp.TOTP(user["totp_secret"]).verify(str(code).strip(), valid_window=1)
 
 
+ADRESSES_LOCALES = ("127.0.0.1", "::1")
+
+PAGE_AUCUN_COMPTE = (
+    "<!doctype html><meta charset='utf-8'><title>SENTINEL-X</title>"
+    "<body style='font-family:system-ui;background:#1b1f23;color:#e6e6e6;padding:40px'>"
+    "<h1>Accès refusé</h1><p>Aucun compte n'est configuré : le dashboard n'est "
+    "consultable que depuis le PC serveur.</p><p>L'administrateur doit créer un compte "
+    "avec <code>make setup-2fa</code>.</p></body>"
+)
+
+
+def est_local(ip: str | None) -> bool:
+    """True si la requête vient du PC serveur lui-même (et non du réseau)."""
+    return ip in ADRESSES_LOCALES
+
+
 def login_required(view):
-    """Décorateur : exige une connexion. Si AUCUN compte n'existe encore, l'accès
-    reste ouvert (pour ne pas se verrouiller dehors) ; dès qu'un compte est créé,
-    le login + 2FA devient obligatoire."""
+    """Décorateur : exige une connexion (mot de passe + 2FA).
+
+    Si AUCUN compte n'existe encore, seul le PC serveur lui-même peut consulter
+    (pour ne pas se verrouiller dehors pendant l'installation). Une machine du
+    réseau est refusée : sans compte, rien n'est exposé.
+    """
     @wraps(view)
     def wrapper(*args, **kwargs):
-        if comptes_existants() and not session.get("user"):
+        if not comptes_existants():
+            if est_local(request.remote_addr):
+                return view(*args, **kwargs)
+            return PAGE_AUCUN_COMPTE, 403
+        if not session.get("user"):
             return redirect(url_for("login"))
         return view(*args, **kwargs)
     return wrapper

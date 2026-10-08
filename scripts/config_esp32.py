@@ -28,6 +28,10 @@ TEMPLATE = """#pragma once
 #define WIFI_SSID     "A_REMPLIR"      // <-- nom de ton reseau WiFi
 #define WIFI_PASSWORD "A_REMPLIR"      // <-- mot de passe du WiFi
 #define BROKER_IP     "{ip}"           // IP du PC-broker (detectee automatiquement)
+
+// Seulement pour la variante chiffree (pio run -e esp32dev-secrets-tls) :
+#define MQTT_USER     "sentinel"       // compte du broker securise (8883)
+#define MQTT_PASSWORD "A_REMPLIR"      // <-- a demander a la filiere CYBER
 """
 
 
