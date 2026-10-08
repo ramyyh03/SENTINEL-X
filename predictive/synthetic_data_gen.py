@@ -35,7 +35,8 @@ class SyntheticDataGenerator:
             # air propre -> baseline ADC ~650 (mesuré sur le vrai capteur).
             temp = float(np.clip(self.rng.normal(22, 2.0), 15, 32))        # pièce : ~18-26 °C
             humidity = float(np.clip(50 + (temp - 22) * 1.5 + self.rng.normal(0, 4), 30, 70))
-            gas = float(np.clip(self.rng.normal(650, 70), 400, 950))       # MQ-2 air propre
+            # GAZ NORMALISÉ (écart à l'air propre) : ~0 au repos (auto-calibration ESP32).
+            gas = float(np.clip(self.rng.normal(20, 20), 0, 100))
             presence = int(self.rng.choice([0, 1], p=[0.85, 0.15]))
             lignes.append([temp, humidity, gas, presence]); labels.append(0); desc.append("NORMAL")
 
@@ -59,36 +60,37 @@ class SyntheticDataGenerator:
         return df
 
     # --- 8 types d'anomalies ---
-    def _gas_spike(self):   # pic de gaz soudain (briquet/fumée près du capteur)
+    # NB : gaz NORMALISÉ (écart à l'air propre). ~0 = repos ; >200 = gaz présent.
+    def _gas_spike(self):   # pic de gaz (briquet/fumée près du capteur)
         return [float(self.rng.normal(22, 1)), float(self.rng.normal(50, 3)),
-                float(self.rng.normal(1800, 300)), 0], "GAS_SPIKE"
+                float(self.rng.normal(400, 120)), 0], "GAS_SPIKE"
 
     def _temp_jump(self):   # température impossible (gaz au repos)
         return [float(self.rng.normal(55, 5)), float(self.rng.normal(30, 5)),
-                float(self.rng.normal(650, 70)), 0], "TEMP_JUMP"
+                float(np.clip(self.rng.normal(20, 20), 0, 100)), 0], "TEMP_JUMP"
 
-    def _logic_inversion(self):  # présence mais gaz anormalement BAS (< baseline)
+    def _logic_inversion(self):  # présence sans aucun gaz (anomalie logique)
         return [float(self.rng.normal(22, 1)), float(self.rng.normal(50, 3)),
-                float(self.rng.normal(350, 50)), 1], "LOGIC_INVERSION"
+                float(np.clip(self.rng.normal(5, 5), 0, 50)), 1], "LOGIC_INVERSION"
 
     def _temp_drift(self):  # dérive thermique (gaz au repos)
         return [float(self.rng.normal(38, 3)), float(self.rng.normal(22, 2)),
-                float(self.rng.normal(650, 70)), 0], "TEMP_DRIFT"
+                float(np.clip(self.rng.normal(20, 20), 0, 100)), 0], "TEMP_DRIFT"
 
     def _humidity_high(self):  # humidité extrême (gaz au repos)
         return [float(self.rng.normal(22, 1)), float(self.rng.normal(96, 3)),
-                float(self.rng.normal(650, 70)), int(self.rng.integers(0, 2))], "HUMIDITY_HIGH"
+                float(np.clip(self.rng.normal(20, 20), 0, 100)), int(self.rng.integers(0, 2))], "HUMIDITY_HIGH"
 
-    def _correlation_broken(self):  # gaz TRÈS haut sans présence
+    def _correlation_broken(self):  # gaz TRÈS élevé sans présence
         return [float(self.rng.normal(22, 1)), float(self.rng.normal(50, 3)),
-                float(self.rng.normal(2500, 400)), 0], "CORRELATION_BROKEN"
+                float(self.rng.normal(900, 200)), 0], "CORRELATION_BROKEN"
 
-    def _stuck(self):  # valeurs figées « parfaites » (pas de bruit) à la baseline
-        return [22.0, 50.0, 650.0, 0], "STUCK"
+    def _stuck(self):  # valeurs figées « parfaites » (pas de bruit) au repos
+        return [22.0, 50.0, 0.0, 0], "STUCK"
 
-    def _injection(self):  # tout cassé (extrêmes) — ADC max = 4095
+    def _injection(self):  # tout cassé (extrêmes)
         return [float(self.rng.uniform(-10, 70)), float(self.rng.uniform(0, 100)),
-                float(self.rng.uniform(3800, 4095)), int(self.rng.integers(0, 2))], "INJECTION"
+                float(self.rng.uniform(1500, 3000)), int(self.rng.integers(0, 2))], "INJECTION"
 
 
 if __name__ == "__main__":

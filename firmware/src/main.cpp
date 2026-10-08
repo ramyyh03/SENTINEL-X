@@ -97,7 +97,15 @@ bool  saveBroker   = false;    // vrai si l'utilisateur vient de (re)configurer
 unsigned long derniereTentativeMQTT = 0;
 float temperature  = NAN;
 float humidite     = NAN;
-int   gaz          = 0;      // valeur brute ADC MQ-2 (0..4095) — voir README pour la calibration ppm
+int   gaz          = 0;      // GAZ NORMALISÉ : 0 au repos, monte avec le gaz (= brut - baseline)
+// Auto-calibration du MQ-2 : on mesure la baseline (air propre) au démarrage,
+// puis on envoie l'ÉCART -> 0 au repos, comme les autres capteurs/groupes.
+const unsigned long GAS_WARMUP_MS = 10000;   // on ignore les 10 premières s (chauffe)
+const unsigned long GAS_CALIB_MS  = 25000;   // on calibre jusqu'à 25 s
+int   gazBaseline  = 0;
+bool  gazCalibre   = false;
+long  gazSomme     = 0;
+int   gazEchant    = 0;
 bool  presence     = false;  // PIR : true = mouvement détecté
 unsigned long derniereLecture = 0;
 #ifdef ALERTES_RX
@@ -374,8 +382,23 @@ void publierMesure() {
 void lireCapteurs() {
   temperature = dht.readTemperature();
   humidite    = dht.readHumidity();
-  gaz         = analogRead(PIN_MQ2);         // MQ-2 : valeur brute 0..4095 (12 bits)
   presence    = digitalRead(PIN_PIR) == HIGH; // PIR : HIGH = mouvement
+
+  int brut = analogRead(PIN_MQ2);            // MQ-2 : valeur brute 0..4095 (12 bits)
+  unsigned long t = millis();
+  if (!gazCalibre) {
+    // Phase de calibration : on moyenne la baseline en air propre (après chauffe).
+    if (t > GAS_WARMUP_MS) { gazSomme += brut; gazEchant++; }
+    if (t > GAS_CALIB_MS && gazEchant > 0) {
+      gazBaseline = (int)(gazSomme / gazEchant);
+      gazCalibre = true;
+      Serial.printf("MQ-2 calibre : baseline air propre = %d ADC\n", gazBaseline);
+    }
+    gaz = 0;                                 // on envoie 0 pendant la calibration
+  } else {
+    int delta = brut - gazBaseline;          // écart par rapport à l'air propre
+    gaz = delta > 0 ? delta : 0;             // 0 au repos, monte avec le gaz
+  }
 }
 
 void afficherSerie() {
