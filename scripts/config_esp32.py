@@ -12,6 +12,7 @@ Usage :
 from __future__ import annotations
 
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -58,19 +59,24 @@ def ouvrir(path: Path) -> None:
 
 def main() -> int:
     ip = ip_locale()
-    print(f"🌐 IP du PC détectée (= IP du broker) : {ip}")
+    print(f"IP du PC detectee (= IP du broker) : {ip}")
 
     if SECRETS.exists():
-        print("ℹ️ secrets.h existe déjà — je ne l'écrase pas, je l'ouvre.")
+        # On met A JOUR seulement BROKER_IP, en PRESERVANT le WiFi saisi.
+        contenu = SECRETS.read_text(encoding="utf-8")
+        nouveau, n = re.subn(r'#define\s+BROKER_IP\s+"[^"]*"',
+                             f'#define BROKER_IP     "{ip}"', contenu)
+        if n == 0:                                   # pas de ligne BROKER_IP -> on l'ajoute
+            nouveau = contenu.rstrip() + f'\n#define BROKER_IP     "{ip}"\n'
+        SECRETS.write_text(nouveau, encoding="utf-8")
+        print(f"[OK] BROKER_IP mis a jour -> {ip}  (WiFi preserve)")
+        print("Reflashe maintenant :  make.bat flash-full")
     else:
         SECRETS.parent.mkdir(parents=True, exist_ok=True)
         SECRETS.write_text(TEMPLATE.format(ip=ip), encoding="utf-8")
-        print(f"✅ secrets.h créé avec BROKER_IP = {ip}")
-
-    print("👉 Remplis WIFI_SSID + WIFI_PASSWORD, enregistre, puis flashe :")
-    print("   pio run -e esp32dev-secrets -t erase")
-    print("   pio run -e esp32dev-secrets -t upload")
-    ouvrir(SECRETS)
+        print(f"[OK] secrets.h cree avec BROKER_IP = {ip}")
+        print("Remplis WIFI_SSID + WIFI_PASSWORD, enregistre, puis : make.bat flash-full")
+        ouvrir(SECRETS)
     return 0
 
 
