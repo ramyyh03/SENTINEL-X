@@ -504,7 +504,10 @@ void setup() {
   }
 
   dht.begin();
-  pinMode(PIN_PIR, INPUT);     // PIR : sortie numérique
+  // INPUT_PULLDOWN : si le fil OUT du PIR fait faux contact, on lit "non"
+  // (au lieu d'un "oui" bloqué dû à une entrée flottante). Le PIR, quand il
+  // est bien branché, pilote quand même la broche normalement.
+  pinMode(PIN_PIR, INPUT_PULLDOWN);
 #ifdef STATUS_LEDS
   pinMode(PIN_LED_VERT, OUTPUT);
   pinMode(PIN_LED_ORANGE, OUTPUT);

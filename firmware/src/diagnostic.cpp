@@ -43,7 +43,7 @@ void setup() {
   Wire.setTimeOut(50);       // ms : jamais de blocage I2C
 
   dht.begin();
-  pinMode(PIN_PIR, INPUT);
+  pinMode(PIN_PIR, INPUT_PULLDOWN);   // évite un "oui" bloqué si OUT débranché
   pinMode(PIN_LED_VERT, OUTPUT);
   pinMode(PIN_LED_ORANGE, OUTPUT);
   pinMode(PIN_LED_ROUGE, OUTPUT);

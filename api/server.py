@@ -472,7 +472,7 @@ def _page_cockpit() -> str:
     btn.disabled = false;
   }
   refresh(); setInterval(refresh, 3000);
-  majCam(); setInterval(majCam, 1500);
+  majCam(); setInterval(majCam, 600);
 </script>
 </body></html>"""
 

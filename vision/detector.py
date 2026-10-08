@@ -44,8 +44,11 @@ CONF_THRESHOLD = 0.50         # on ne garde que les détections sûres à ≥ 50
 FRAME_W, FRAME_H = 640, 480   # résolution d'inférence
 # Dernière image annotée (lue par le dashboard pour afficher la caméra)
 LATEST_FRAME = PROJECT_ROOT / "data" / "captures" / "latest.jpg"
-LATEST_WRITE_INTERVAL = 0.3   # s : on n'écrit pas le JPG à chaque frame (throttle)
+LATEST_WRITE_INTERVAL = 0.2   # s : fréquence d'écriture du JPG pour le dashboard
 MAX_LATENCY_MS = 100          # objectif : traiter une frame en < 100 ms
+# YOLO est lent sur CPU : on ne l'exécute qu'1 frame sur N et on réutilise les
+# dernières boîtes entre-temps -> le flux reste fluide (moins de latence).
+DETECT_EVERY = int(os.getenv("DETECT_EVERY", "3"))
 ALERT_COOLDOWN_S = 5          # anti-spam : pas 2 alertes identiques en < 5 s
 # Index caméra : 0 = 1re caméra. Sur un PC avec webcam intégrée, la webcam USB
 # (UGREEN CM678) est souvent l'index 1 → configurable via .env ou --camera.
@@ -240,6 +243,7 @@ def run_detection(api_url: str | None = None, simulate: bool = False,
 
     derniere_alerte = 0.0
     derniere_ecriture = 0.0
+    detections: list[dict] = []   # réutilisées entre deux inférences YOLO
     i = 0
     try:
         while True:
@@ -251,9 +255,11 @@ def run_detection(api_url: str | None = None, simulate: bool = False,
                     log("CAMÉRA", Fore.RED, "Lecture frame échouée — arrêt.")
                     break
 
-            detections, latence = detector.detecter(frame)
-            if latence > MAX_LATENCY_MS:
-                log("PERF", Fore.YELLOW, f"Frame lente : {latence:.0f} ms (> {MAX_LATENCY_MS} ms)")
+            # YOLO seulement 1 frame sur DETECT_EVERY (le reste réutilise les boîtes).
+            if i % DETECT_EVERY == 0:
+                detections, latence = detector.detecter(frame)
+                if latence > MAX_LATENCY_MS:
+                    log("PERF", Fore.YELLOW, f"Frame lente : {latence:.0f} ms (> {MAX_LATENCY_MS} ms)")
 
             if detections:
                 maintenant = time.monotonic()
