@@ -100,8 +100,8 @@ float humidite     = NAN;
 int   gaz          = 0;      // GAZ NORMALISÉ : 0 au repos, monte avec le gaz (= brut - baseline)
 // Auto-calibration du MQ-2 : on mesure la baseline (air propre) au démarrage,
 // puis on envoie l'ÉCART -> 0 au repos, comme les autres capteurs/groupes.
-const unsigned long GAS_WARMUP_MS = 10000;   // on ignore les 10 premières s (chauffe)
-const unsigned long GAS_CALIB_MS  = 25000;   // on calibre jusqu'à 25 s
+const unsigned long GAS_WARMUP_MS = 60000;   // chauffe du MQ-2 : on ignore la 1ʳᵉ minute
+const unsigned long GAS_CALIB_MS  = 80000;   // on calibre la baseline entre 60 et 80 s
 int   gazBaseline  = 0;
 bool  gazCalibre   = false;
 long  gazSomme     = 0;
@@ -396,6 +396,9 @@ void lireCapteurs() {
     }
     gaz = 0;                                 // on envoie 0 pendant la calibration
   } else {
+    // Suivi du minimum : si on lit plus bas que la baseline (air encore plus
+    // propre / dérive), on recale -> le repos reste toujours ~0.
+    if (brut < gazBaseline) gazBaseline = brut;
     int delta = brut - gazBaseline;          // écart par rapport à l'air propre
     gaz = delta > 0 ? delta : 0;             // 0 au repos, monte avec le gaz
   }
