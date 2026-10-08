@@ -53,9 +53,15 @@ def main() -> int:
         return 1
 
     L._rapport(True, api_ok, ollama_ok)
-    # Fenêtre maximisée : le cockpit occupe toute l'app.
-    webview.create_window("SENTINEL-X", L.URL_COCKPIT, width=1200, height=820)
-    webview.start()                       # bloque jusqu'à fermeture de la fenêtre
+    # Anti-cache : URL unique à chaque ouverture -> la fenêtre charge TOUJOURS la
+    # dernière interface (sinon Edge WebView2 garde l'ancienne version en cache).
+    import time as _t
+    url = f"{L.URL_COCKPIT}?v={int(_t.time())}"
+    webview.create_window("SENTINEL-X", url, width=1280, height=840)
+    try:
+        webview.start(private_mode=True)  # profil temporaire : pas de cache persistant
+    except TypeError:
+        webview.start()                   # anciennes versions de pywebview
     L.arreter()                           # arrêt propre du système à la fermeture
     return 0
 
