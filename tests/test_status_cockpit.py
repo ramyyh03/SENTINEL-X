@@ -30,9 +30,10 @@ def test_page_cockpit_contient_elements():
     # Act
     html = server._page_cockpit()
 
-    # Assert : le cockpit embarque l'analyse et les onglets
-    assert "Cockpit" in html
-    assert "/api/v1/status" in html
+    # Assert : le cockpit embarque l'analyse, le chat IA et les onglets
+    assert "Assistant Mistral" in html          # chat latéral
+    assert "/api/v1/status" in html             # analyse de connectivité
+    assert "/api/v1/context" in html            # chat connecté aux données
     assert 'src="/dashboard"' in html
 
 

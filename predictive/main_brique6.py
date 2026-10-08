@@ -47,7 +47,7 @@ _API_URL = os.getenv("API_URL", "http://localhost:3000")
 _API_PATH = os.getenv("API_ALERTS_ENDPOINT", "/api/v1/alerts")
 API_ENDPOINT = os.getenv("API_ENDPOINT") or f"{_API_URL.rstrip('/')}/{_API_PATH.lstrip('/')}"
 BUFFER_MAX = 120          # tampon des lectures récentes (pour les features)
-POLL_SECONDS = 2          # fréquence de scrutation de la base
+POLL_SECONDS = 1          # fréquence de scrutation de la base (alertes réactives)
 COLS = ["timestamp", "temp", "humidity", "gas", "presence"]
 
 

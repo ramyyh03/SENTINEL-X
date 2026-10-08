@@ -193,6 +193,11 @@ def create_app(store: AlertStore | None = None) -> Flask:
     def statut_systeme():
         return jsonify(_statut_systeme(magasin.db_path))
 
+    @app.get("/api/v1/context")
+    @auth.login_required
+    def contexte():
+        return jsonify(_contexte_ia(magasin))
+
     @app.get("/app")
     @auth.login_required
     def cockpit():
@@ -391,88 +396,189 @@ def _statut_systeme(db_path) -> dict:
             "maj": datetime.now(timezone.utc).strftime("%H:%M:%S UTC")}
 
 
+def _contexte_ia(magasin) -> dict:
+    """Résumé de l'état réel (capteurs + alertes) donné à l'IA et au temps réel."""
+    mesures = _lire_capteurs(magasin.db_path, 1)
+    d = mesures[0] if mesures else {}
+    alertes = magasin.recent(5)
+    latest = alertes[0] if alertes else None
+    presence = "oui" if d.get("presence") else "non"
+    resume = (
+        f"Mesures actuelles : température {d.get('temp', '?')} °C, "
+        f"humidité {d.get('humidity', '?')} %, gaz {d.get('gas', '?')} (0=air propre), "
+        f"présence {presence}. "
+        f"{magasin.count()} alerte(s) au total."
+    )
+    if latest:
+        details = latest.get("details") or {}
+        resume += (f" Dernière alerte : {latest.get('type', '?')} "
+                   f"[{details.get('severity', '?')}] — {details.get('context', '')}.")
+    return {"resume": resume, "sensors": d, "alerts_count": magasin.count(),
+            "latest_alert": latest, "maj": datetime.now(timezone.utc).strftime("%H:%M:%S")}
+
+
 _SECU_COULEURS = {"CRITICAL": "#e74c3c", "HIGH": "#e74c3c", "MEDIUM": "#f39c12",
                   "LOW": "#3498db", "OK": "#2ecc71"}
 
 
 def _page_cockpit() -> str:
-    """Cockpit de l'app : analyse de connectivité en direct + pages embarquées."""
+    """Cockpit pro : analyse temps réel + caméra live + chat IA (données) + alertes."""
     return """<!doctype html>
 <html lang="fr"><head>
-<meta charset="utf-8">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SENTINEL-X</title>
 <style>
-  * { box-sizing:border-box; }
-  body { font-family:system-ui,sans-serif; background:#0d1117; color:#e6e6e6; margin:0; }
-  header { padding:14px 20px; background:#161b22; border-bottom:1px solid #30363d; display:flex; align-items:center; gap:16px; }
-  h1 { font-size:18px; margin:0; }
-  .cam img { width:200px; height:120px; object-fit:cover; background:#000; border:1px solid #30363d; border-radius:8px; display:block; }
-  button:disabled { opacity:.5; cursor:default; }
-  .verdict { font-size:14px; margin-top:4px; font-weight:700; }
-  .grid { display:flex; flex-wrap:wrap; gap:10px; padding:14px 20px; }
-  .card { background:#161b22; border:1px solid #30363d; border-radius:10px; padding:12px 14px; min-width:190px; flex:1; }
-  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:8px; }
-  .k { font-weight:600; font-size:14px; }
-  .d { color:#8b949e; font-size:12px; margin-top:4px; }
-  nav { padding:0 20px 10px; }
-  nav a, nav button { background:#21262d; color:#e6e6e6; border:1px solid #30363d; border-radius:7px; padding:7px 12px; margin-right:6px; text-decoration:none; font-size:13px; cursor:pointer; display:inline-block; }
-  nav a.on { background:#1f6feb; border-color:#1f6feb; }
-  iframe { width:100%; height:62vh; border:0; border-top:1px solid #30363d; background:#fff; }
+  *{box-sizing:border-box} html,body{height:100%}
+  body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#0d1117;color:#e6edf3;margin:0;
+       display:grid;grid-template-rows:auto 1fr;height:100vh;overflow:hidden}
+  /* En-tête */
+  header{padding:12px 18px;background:#161b22;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:14px}
+  header h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.3px}
+  #verdict{font-size:13px;font-weight:600;padding:4px 10px;border-radius:20px;background:#21262d}
+  .clock{margin-left:auto;color:#8b949e;font-size:12px;font-variant-numeric:tabular-nums}
+  /* Corps : contenu + chat */
+  main{display:grid;grid-template-columns:1fr 360px;min-height:0}
+  .content{min-height:0;overflow-y:auto;padding:14px 18px;display:flex;flex-direction:column;gap:14px}
+  /* Cartes de statut */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .card{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:12px 14px}
+  .card .k{font-weight:600;font-size:13px;display:flex;align-items:center}
+  .card .d{color:#8b949e;font-size:11px;margin-top:5px}
+  .dot{width:9px;height:9px;border-radius:50%;margin-right:8px;display:inline-block;box-shadow:0 0 6px currentColor}
+  /* Onglets + vue */
+  .panel{background:#161b22;border:1px solid #30363d;border-radius:12px;overflow:hidden;display:flex;flex-direction:column;flex:1;min-height:360px}
+  .tabs{display:flex;gap:4px;padding:8px;border-bottom:1px solid #30363d;background:#0f141a}
+  .tabs button{flex:0 0 auto;background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:8px;
+               padding:7px 14px;font-size:13px;cursor:pointer;transition:.15s}
+  .tabs button.on{background:#1f6feb;border-color:#1f6feb}
+  .tabs button:hover{border-color:#58a6ff}
+  iframe{width:100%;flex:1;border:0;background:#fff}
+  /* Chat latéral */
+  .chat{background:#0f141a;border-left:1px solid #30363d;display:flex;flex-direction:column;min-height:0}
+  .chat .top{padding:12px 14px;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:10px;background:#161b22}
+  .chat .top b{font-size:14px} .chat .top .d{color:#8b949e;font-size:11px}
+  .camwrap{position:relative;margin:10px 12px 0;border-radius:10px;overflow:hidden;border:1px solid #30363d;background:#000}
+  .camwrap img{width:100%;height:150px;object-fit:cover;display:block}
+  .camwrap .lbl{position:absolute;top:6px;left:8px;background:rgba(0,0,0,.55);font-size:10px;padding:2px 7px;border-radius:10px;color:#7ee787}
+  .msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+  .msg{max-width:88%;padding:9px 12px;border-radius:12px;font-size:13px;line-height:1.45;white-space:pre-wrap;word-wrap:break-word}
+  .msg.ia{background:#161b22;border:1px solid #30363d;align-self:flex-start;border-bottom-left-radius:3px}
+  .msg.me{background:#1f6feb;align-self:flex-end;border-bottom-right-radius:3px}
+  .msg.sys{background:transparent;color:#8b949e;font-size:11px;align-self:center;text-align:center;padding:2px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 8px}
+  .chips button{background:#21262d;border:1px solid #30363d;color:#adbac7;border-radius:14px;padding:4px 10px;font-size:11px;cursor:pointer}
+  .chips button:hover{border-color:#58a6ff;color:#fff}
+  .composer{display:flex;gap:8px;padding:10px 12px;border-top:1px solid #30363d;background:#161b22}
+  .composer input{flex:1;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:10px;padding:9px 12px;font-size:13px}
+  .composer input:focus{outline:none;border-color:#1f6feb}
+  .composer button{background:#1f6feb;border:0;color:#fff;border-radius:10px;padding:0 14px;cursor:pointer;font-size:15px}
+  .composer button:disabled{opacity:.5;cursor:default}
+  /* Toast d'alerte */
+  #toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-120%);transition:.35s;
+         z-index:50;min-width:320px;max-width:560px;padding:12px 16px;border-radius:12px;
+         box-shadow:0 10px 30px rgba(0,0,0,.5);font-size:14px;font-weight:600;display:flex;align-items:center;gap:10px}
+  #toast.show{transform:translateX(-50%) translateY(0)}
+  @media(max-width:860px){main{grid-template-columns:1fr} .chat{display:none}}
 </style></head>
 <body>
   <header>
-    <div style="flex:1">
-      <h1>🛡️ SENTINEL-X — Cockpit</h1>
-      <div class="verdict" id="verdict">Analyse en cours…</div>
-      <div style="margin-top:8px">
-        <button id="iabtn" onclick="testIA()">🤖 Tester l'IA (Mistral)</button>
-        <span id="iaout" class="d" style="margin-left:8px">—</span>
-      </div>
-    </div>
-    <div class="cam">
-      <img id="cam" alt="webcam" title="flux webcam (vision)">
-      <div class="d" style="text-align:center">webcam (live)</div>
-    </div>
+    <h1>🛡️ SENTINEL-X</h1>
+    <span id="verdict">Analyse…</span>
+    <span class="clock" id="clock">—</span>
   </header>
-  <div class="grid" id="grid"></div>
-  <nav>
-    <a href="#" class="on" onclick="go('/dashboard',this);return false">Alertes</a>
-    <a href="#" onclick="go('/live',this);return false">Capteurs</a>
-    <a href="#" onclick="go('/camera',this);return false">Caméra</a>
-    <a href="#" onclick="go('/security',this);return false">Sécurité</a>
-  </nav>
-  <iframe id="vue" src="/dashboard"></iframe>
+  <main>
+    <section class="content">
+      <div class="cards" id="cards"></div>
+      <div class="panel">
+        <div class="tabs">
+          <button class="on" data-url="/dashboard">🚨 Alertes</button>
+          <button data-url="/live">📊 Capteurs</button>
+          <button data-url="/camera">🎥 Caméra</button>
+          <button data-url="/security">🛡️ Sécurité</button>
+        </div>
+        <iframe id="vue" src="/dashboard"></iframe>
+      </div>
+    </section>
+    <aside class="chat">
+      <div class="top"><span style="font-size:18px">🤖</span><div><b>Assistant Mistral</b><div class="d">connecté à tes données</div></div></div>
+      <div class="camwrap"><img id="cam" alt="webcam"><span class="lbl">● WEBCAM LIVE</span></div>
+      <div class="msgs" id="msgs"></div>
+      <div class="chips">
+        <button onclick="ask('Quel est l\\'état des capteurs ?')">État capteurs</button>
+        <button onclick="ask('Y a-t-il une alerte à surveiller ?')">Alertes ?</button>
+        <button onclick="ask('Le niveau de gaz est-il normal ?')">Gaz normal ?</button>
+      </div>
+      <div class="composer">
+        <input id="q" placeholder="Pose une question sur le système…" onkeydown="if(event.key==='Enter')send()">
+        <button id="sendbtn" onclick="send()">➤</button>
+      </div>
+    </aside>
+  </main>
+  <div id="toast"></div>
 <script>
-  function go(url, el){ document.getElementById('vue').src=url;
-    document.querySelectorAll('nav a').forEach(a=>a.classList.remove('on')); el.classList.add('on'); }
-  async function refresh(){
-    try {
-      const r = await fetch('/api/v1/status'); const s = await r.json();
-      const v = document.getElementById('verdict');
-      v.textContent = s.tout_ok ? '✅ Tout est connecté et fonctionnel' : '⚠️ Certains éléments ne sont pas connectés';
-      v.style.color = s.tout_ok ? '#2ecc71' : '#f39c12';
-      const g = document.getElementById('grid'); g.innerHTML='';
-      for (const key in s.composants){ const c = s.composants[key];
-        const col = c.ok ? '#2ecc71' : '#e74c3c';
-        g.innerHTML += `<div class="card"><div class="k"><span class="dot" style="background:${col}"></span>${c.label}</div>`
-          + `<div class="d">${c.ok?'connecté':'non connecté'}${c.detail?(' · '+c.detail):''}</div></div>`;
-      }
-    } catch(e){ document.getElementById('verdict').textContent='API injoignable…'; }
+  // --- onglets ---
+  document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
+    document.getElementById('vue').src=b.dataset.url;
+    document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  });
+  // --- statut (cartes + verdict) ---
+  async function refreshStatus(){
+    try{
+      const s=await (await fetch('/api/v1/status')).json();
+      const v=document.getElementById('verdict');
+      v.textContent=s.tout_ok?'✅ Tout opérationnel':'⚠️ À vérifier';
+      v.style.background=s.tout_ok?'#132d1e':'#3a2d12'; v.style.color=s.tout_ok?'#3fb950':'#d29922';
+      const g=document.getElementById('cards'); g.innerHTML='';
+      for(const k in s.composants){const c=s.composants[k];const col=c.ok?'#3fb950':'#f85149';
+        g.innerHTML+=`<div class="card"><div class="k"><span class="dot" style="color:${col};background:${col}"></span>${c.label}</div>`
+          +`<div class="d">${c.ok?'connecté':'non connecté'}${c.detail?(' · '+c.detail):''}</div></div>`;}
+    }catch(e){document.getElementById('verdict').textContent='API injoignable';}
   }
-  function majCam(){ document.getElementById('cam').src = '/camera/frame?t=' + Date.now(); }
-  async function testIA(){
-    const out = document.getElementById('iaout'), btn = document.getElementById('iabtn');
-    out.textContent = '⏳ Mistral réfléchit… (patiente ~15-30 s)'; btn.disabled = true;
-    try {
-      const r = await fetch('/api/v1/ollama', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({question:'Confirme en une phrase que le système de surveillance est opérationnel.'})});
-      const d = await r.json();
-      out.textContent = d.answer ? ('✅ ' + d.answer) : ('❌ ' + (d.error || 'IA indisponible'));
-    } catch(e){ out.textContent = '❌ IA injoignable'; }
-    btn.disabled = false;
+  // --- caméra live (rapide) ---
+  function majCam(){document.getElementById('cam').src='/camera/frame?t='+Date.now();}
+  // --- contexte + alertes temps réel ---
+  let ctxResume=''; let lastAlertTs;
+  const SEV={CRITICAL:'#f85149',HIGH:'#f85149',WARNING:'#d29922',INFO:'#58a6ff'};
+  async function pollContext(){
+    try{
+      const c=await (await fetch('/api/v1/context')).json();
+      ctxResume=c.resume||'';
+      document.getElementById('clock').textContent=c.maj||'';
+      const la=c.latest_alert, ts=la?la.timestamp:null;
+      if(lastAlertTs===undefined){lastAlertTs=ts;}       // init sans toast
+      else if(ts && ts!==lastAlertTs){toast(la);lastAlertTs=ts;}
+    }catch(e){}
   }
-  refresh(); setInterval(refresh, 3000);
-  majCam(); setInterval(majCam, 600);
+  function toast(a){
+    const d=a.details||{}, sev=d.severity||'WARNING', col=SEV[sev]||'#d29922';
+    const t=document.getElementById('toast');
+    t.style.background=col; t.style.color='#0d1117';
+    t.innerHTML='🚨 <b>ALERTE '+sev+'</b> — '+(a.type||'')+' : '+(d.context||'');
+    t.classList.add('show'); clearTimeout(window._tt);
+    window._tt=setTimeout(()=>t.classList.remove('show'),8000);
+  }
+  // --- chat IA (avec données réelles en contexte) ---
+  const msgs=document.getElementById('msgs');
+  function bubble(txt,cls){const m=document.createElement('div');m.className='msg '+cls;m.textContent=txt;msgs.appendChild(m);msgs.scrollTop=msgs.scrollHeight;return m;}
+  bubble('Bonjour 👋 Je suis Mistral, connecté à tes capteurs. Pose-moi une question sur l\\'état du système.','ia');
+  function ask(q){document.getElementById('q').value=q;send();}
+  async function send(){
+    const inp=document.getElementById('q'), btn=document.getElementById('sendbtn');
+    const q=inp.value.trim(); if(!q) return;
+    bubble(q,'me'); inp.value=''; btn.disabled=true;
+    const wait=bubble('… Mistral réfléchit (données en cours)','ia');
+    try{
+      const r=await fetch('/api/v1/ollama',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({question:q, context:ctxResume})});
+      const d=await r.json();
+      wait.textContent=d.answer || ('⚠️ '+(d.error||'IA indisponible')+' '+(d.suggestion||''));
+    }catch(e){wait.textContent='❌ IA injoignable';}
+    btn.disabled=false; inp.focus();
+  }
+  // --- boucles ---
+  refreshStatus(); setInterval(refreshStatus,3000);
+  pollContext();   setInterval(pollContext,2000);
+  majCam();        setInterval(majCam,400);
 </script>
 </body></html>"""
 
