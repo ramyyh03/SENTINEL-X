@@ -52,7 +52,7 @@ DETECT_EVERY = int(os.getenv("DETECT_EVERY", "3"))
 ALERT_COOLDOWN_S = 5          # anti-spam : pas 2 alertes identiques en < 5 s
 # Index caméra : 0 = 1re caméra. Sur un PC avec webcam intégrée, la webcam USB
 # (UGREEN CM678) est souvent l'index 1 → configurable via .env ou --camera.
-CAMERA_INDEX = int(os.getenv("CAMERA_INDEX", "0"))
+CAMERA_INDEX = int(os.getenv("CAMERA_INDEX", "1"))   # défaut : webcam externe (UGREEN)
 
 API_URL = os.getenv("API_URL", "http://localhost:3000")
 API_PATH = os.getenv("API_ALERTS_ENDPOINT", "/api/v1/alerts")
@@ -179,15 +179,27 @@ def _ouvrir_webcam(index: int = CAMERA_INDEX) -> cv2.VideoCapture | None:
     return cap
 
 
-def _ouvrir_webcam_auto(prefere: int = CAMERA_INDEX, maxi: int = 3):
-    """Essaie l'index préféré puis balaie 0..maxi. Retourne (cap, index) ou (None, -1).
+def _ouvrir_webcam_auto(prefere: int = CAMERA_INDEX, maxi: int = 4):
+    """Ouvre la webcam en PRÉFÉRANT la caméra externe (UGREEN USB).
 
-    Utile car la webcam USB (UGREEN CM678) est souvent sur l'index 1, pas 0.
+    La caméra intégrée du PC est presque toujours l'index 0 ; une webcam USB
+    s'énumère après (1, 2…). On essaie donc les index externes (1..maxi) d'abord,
+    et l'index 0 (intégrée) seulement EN DERNIER RECOURS.
+    Retourne (cap, index) ou (None, -1).
     """
-    candidats = [prefere] + [i for i in range(maxi + 1) if i != prefere]
-    for idx in candidats:
+    # Externes d'abord (préféré s'il est >=1, puis 1..maxi), intégrée (0) en dernier.
+    ordre = [prefere] if prefere >= 1 else []
+    ordre += [i for i in range(1, maxi + 1) if i != prefere]
+    ordre += [0]                                   # caméra intégrée : dernier recours
+    vus: set[int] = set()
+    for idx in ordre:
+        if idx in vus:
+            continue
+        vus.add(idx)
         cap = _ouvrir_webcam(idx)
         if cap is not None:
+            quel = "integree (PC)" if idx == 0 else "externe (USB/UGREEN)"
+            log("CAMÉRA", Fore.GREEN, f"Webcam {quel} utilisee (index {idx}).")
             return cap, idx
     return None, -1
 
