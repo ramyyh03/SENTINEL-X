@@ -49,7 +49,8 @@ MAX_LATENCY_MS = 100          # objectif : traiter une frame en < 100 ms
 # YOLO est lent sur CPU : on ne l'exécute qu'1 frame sur N et on réutilise les
 # dernières boîtes entre-temps -> le flux reste fluide (moins de latence).
 DETECT_EVERY = int(os.getenv("DETECT_EVERY", "3"))
-ALERT_COOLDOWN_S = 30         # anti-spam : une alerte caméra au plus toutes les 30 s
+ALERT_COOLDOWN_S = 4          # anti-spam alertes caméra (l'état live, lui, est instantané)
+VISION_STATUS = PROJECT_ROOT / "data" / "vision_status.json"   # nb de personnes en direct
 # Index caméra : 0 = 1re caméra. Sur un PC avec webcam intégrée, la webcam USB
 # (UGREEN CM678) est souvent l'index 1 → configurable via .env ou --camera.
 CAMERA_INDEX = int(os.getenv("CAMERA_INDEX", "1"))   # défaut : webcam externe (UGREEN)
@@ -283,6 +284,10 @@ def run_detection(api_url: str | None = None, simulate: bool = False,
                         f"confiance max {alerte['confidence']} ({latence:.0f} ms)")
                     poster_alerte(alerte)
 
+            # Statut caméra LIVE : nombre de personnes visibles maintenant
+            # (lu par l'API pour piloter la pastille d'état en temps réel).
+            _ecrire_statut(len(detections))
+
             # Image annotée pour le dashboard (/camera) — écrite périodiquement
             _dessiner_boites(frame, detections)
             now = time.monotonic()
@@ -329,6 +334,17 @@ def _ecrire_latest(frame: np.ndarray) -> None:
         cv2.imwrite(str(LATEST_FRAME), frame)
     except Exception:
         pass  # l'affichage dashboard ne doit jamais casser la détection
+
+
+def _ecrire_statut(nb_personnes: int) -> None:
+    """Écrit le nombre de personnes visibles maintenant (état live pour l'API)."""
+    import json
+    try:
+        VISION_STATUS.parent.mkdir(parents=True, exist_ok=True)
+        VISION_STATUS.write_text(
+            json.dumps({"persons": nb_personnes, "ts": time.time()}), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def main() -> int:

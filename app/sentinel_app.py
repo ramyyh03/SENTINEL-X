@@ -20,6 +20,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Profil webview NEUF à chaque lancement : empêche Edge WebView2 de garder
+# l'ancienne interface en cache (sinon la fenêtre affiche une vieille version).
+import os as _os          # noqa: E402
+import tempfile as _tmp   # noqa: E402
+_os.environ["WEBVIEW2_USER_DATA_FOLDER"] = _tmp.mkdtemp(prefix="sentinel_webview_")
+
 from scripts import launch_all as L  # noqa: E402
 
 

@@ -181,6 +181,13 @@ def create_app(store: AlertStore | None = None) -> Flask:
             return jsonify({"error": "échec stockage"}), 500
         logger.info("Alerte #%s stockée : %s / %s (conf=%s)",
                     alert_id, data["source"], data["type"], data["confidence"])
+        # Point unique de diffusion : toute alerte (prédictif ET vision) est
+        # publiée vers l'ESP32 (OLED + LEDs) via MQTT.
+        try:
+            from predictive.alert_publisher import publier_alerte_mqtt
+            publier_alerte_mqtt(data)
+        except Exception:  # noqa: BLE001 — la diffusion LED ne doit jamais casser l'API
+            pass
         return jsonify({"status": "stored", "id": alert_id}), 201
 
     @app.get("/health")
@@ -437,13 +444,42 @@ def _age_depuis(ts) -> float | None:
         return None
 
 
+VISION_STATUS = PROJECT_ROOT / "data" / "vision_status.json"
+CAM_FRAIS_S = 5                 # statut caméra valable 5 s
+
+
+def _niveau_camera() -> tuple[str, str] | None:
+    """État LIVE caméra : 2+ personnes = rouge, 1 = orange, sinon None (pas d'override)."""
+    import json
+    try:
+        if not VISION_STATUS.exists():
+            return None
+        if time.time() - VISION_STATUS.stat().st_mtime > CAM_FRAIS_S:
+            return None
+        n = int(json.loads(VISION_STATUS.read_text(encoding="utf-8")).get("persons", 0))
+    except (OSError, ValueError, TypeError):
+        return None
+    if n >= 2:
+        return "rouge", f"{n} personnes détectées 🎥"
+    if n == 1:
+        return "orange", "1 personne détectée 🎥"
+    return None
+
+
+_ORDRE_NIVEAU = {"vert": 0, "orange": 1, "rouge": 2}
+
+
 def _contexte_ia(magasin) -> dict:
-    """Résumé de l'état réel (capteurs + alertes) donné à l'IA et au temps réel."""
+    """Résumé de l'état réel (capteurs + alertes + caméra live) pour l'IA et le temps réel."""
     mesures = _lire_capteurs(magasin.db_path, 1)
     d = mesures[0] if mesures else {}
     alertes = magasin.recent(5)
     latest = alertes[0] if alertes else None
     niveau, niveau_label = _niveau_alerte(latest)
+    # La caméra LIVE prend le dessus si elle est plus grave (réaction instantanée).
+    cam = _niveau_camera()
+    if cam and _ORDRE_NIVEAU[cam[0]] > _ORDRE_NIVEAU[niveau]:
+        niveau, niveau_label = cam
     presence = "oui" if d.get("presence") else "non"
     resume = (
         f"Mesures actuelles : température {d.get('temp', '?')} °C, "
