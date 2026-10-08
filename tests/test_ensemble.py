@@ -15,8 +15,8 @@ def test_ensemble_normal_vs_anomalie():
     det = EnsembleDetector()
     det.entrainer(df)
 
-    normal = {"temp": 23.0, "humidity": 50, "gas": 120, "presence": 0}
-    anomalie = {"temp": 23.0, "humidity": 50, "gas": 4500, "presence": 0}  # gaz extrême
+    normal = {"temp": 22.0, "humidity": 50, "gas": 650, "presence": 0}       # air propre
+    anomalie = {"temp": 22.0, "humidity": 50, "gas": 3000, "presence": 0}    # gaz extrême
 
     s_norm = det.scorer(normal)["anomaly_score"]
     s_anom = det.scorer(anomalie)["anomaly_score"]
@@ -28,5 +28,5 @@ def test_charger_apres_entrainement():
     SyntheticDataGenerator().generer(n_total=200, anomaly_ratio=0.2)
     EnsembleDetector().entrainer(SyntheticDataGenerator().generer(n_total=1000))
     det = EnsembleDetector.charger()            # recharge depuis le disque
-    r = det.scorer({"temp": 23, "humidity": 50, "gas": 120, "presence": 0})
+    r = det.scorer({"temp": 22, "humidity": 50, "gas": 650, "presence": 0})
     assert "anomaly_score" in r and "model_votes" in r

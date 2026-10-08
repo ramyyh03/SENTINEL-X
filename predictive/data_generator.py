@@ -42,7 +42,7 @@ def _baseline_normale(n: int, rng: np.random.Generator) -> pd.DataFrame:
     # Humidité : anti-corrélée à la température + bruit
     humidite = 55.0 - 10.0 * np.sin((heure - 9.0) / 24.0 * 2 * np.pi) + rng.normal(0, 1.5, n)
     # Gaz : baseline basse, quelques bouffées diurnes
-    gaz = 110.0 + rng.normal(0, 8, n)
+    gaz = 650.0 + rng.normal(0, 60, n)   # MQ-2 air propre : baseline ADC ~650 (mesuré)
     jour = (heure > 8) & (heure < 20)
     gaz[jour] += rng.uniform(0, 40, jour.sum())
     # Présence : surtout en journée (probabilité plus élevée)

@@ -669,7 +669,7 @@ def _corps_live(mesures: list[dict]) -> str:
     gaz = float(d.get("gas") or 0)
     # code couleur (comme l'OLED) : présence rouge, gaz élevé orange
     c_pres = "#c0392b" if presence else "#27ae60"
-    c_gaz = "#e67e22" if gaz >= 1000 else "#58a6ff"
+    c_gaz = "#e67e22" if gaz >= 850 else "#58a6ff"   # baseline ~650 -> >850 = gaz élevé
     cartes = (
         f"<div class='grid'>"
         f"<div class='card'><div class='k'>Température</div><div class='v'>{html.escape(str(d.get('temp','--')))} °C</div></div>"

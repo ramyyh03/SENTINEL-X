@@ -31,9 +31,11 @@ class SyntheticDataGenerator:
 
         # --- Normales ---
         for _ in range(n_norm):
-            temp = float(np.clip(self.rng.normal(23, 1.5), 15, 35))
-            humidity = float(np.clip(50 + (temp - 23) * 2 + self.rng.normal(0, 3), 20, 80))
-            gas = float(np.clip(self.rng.normal(120, 15), 50, 200))
+            # Valeurs ATMOSPHÉRIQUES réalistes (intérieur) + plage réelle du MQ-2 :
+            # air propre -> baseline ADC ~650 (mesuré sur le vrai capteur).
+            temp = float(np.clip(self.rng.normal(22, 2.0), 15, 32))        # pièce : ~18-26 °C
+            humidity = float(np.clip(50 + (temp - 22) * 1.5 + self.rng.normal(0, 4), 30, 70))
+            gas = float(np.clip(self.rng.normal(650, 70), 400, 950))       # MQ-2 air propre
             presence = int(self.rng.choice([0, 1], p=[0.85, 0.15]))
             lignes.append([temp, humidity, gas, presence]); labels.append(0); desc.append("NORMAL")
 
@@ -57,36 +59,36 @@ class SyntheticDataGenerator:
         return df
 
     # --- 8 types d'anomalies ---
-    def _gas_spike(self):   # pic de gaz soudain
-        return [float(self.rng.normal(23, 1)), float(self.rng.normal(50, 3)),
-                float(self.rng.normal(900, 150)), 0], "GAS_SPIKE"
+    def _gas_spike(self):   # pic de gaz soudain (briquet/fumée près du capteur)
+        return [float(self.rng.normal(22, 1)), float(self.rng.normal(50, 3)),
+                float(self.rng.normal(1800, 300)), 0], "GAS_SPIKE"
 
-    def _temp_jump(self):   # température impossible
+    def _temp_jump(self):   # température impossible (gaz au repos)
         return [float(self.rng.normal(55, 5)), float(self.rng.normal(30, 5)),
-                float(self.rng.normal(120, 15)), 0], "TEMP_JUMP"
+                float(self.rng.normal(650, 70)), 0], "TEMP_JUMP"
 
-    def _logic_inversion(self):  # présence mais gaz anormalement bas
-        return [float(self.rng.normal(23, 1)), float(self.rng.normal(50, 3)),
-                float(self.rng.normal(40, 8)), 1], "LOGIC_INVERSION"
+    def _logic_inversion(self):  # présence mais gaz anormalement BAS (< baseline)
+        return [float(self.rng.normal(22, 1)), float(self.rng.normal(50, 3)),
+                float(self.rng.normal(350, 50)), 1], "LOGIC_INVERSION"
 
-    def _temp_drift(self):  # dérive thermique
+    def _temp_drift(self):  # dérive thermique (gaz au repos)
         return [float(self.rng.normal(38, 3)), float(self.rng.normal(22, 2)),
-                float(self.rng.normal(190, 20)), 0], "TEMP_DRIFT"
+                float(self.rng.normal(650, 70)), 0], "TEMP_DRIFT"
 
-    def _humidity_high(self):  # humidité extrême
-        return [float(self.rng.normal(23, 1)), float(self.rng.normal(96, 3)),
-                float(self.rng.normal(140, 15)), int(self.rng.integers(0, 2))], "HUMIDITY_HIGH"
+    def _humidity_high(self):  # humidité extrême (gaz au repos)
+        return [float(self.rng.normal(22, 1)), float(self.rng.normal(96, 3)),
+                float(self.rng.normal(650, 70)), int(self.rng.integers(0, 2))], "HUMIDITY_HIGH"
 
-    def _correlation_broken(self):  # gaz haut sans présence
-        return [float(self.rng.normal(23, 1)), float(self.rng.normal(50, 3)),
-                float(self.rng.normal(1500, 300)), 0], "CORRELATION_BROKEN"
+    def _correlation_broken(self):  # gaz TRÈS haut sans présence
+        return [float(self.rng.normal(22, 1)), float(self.rng.normal(50, 3)),
+                float(self.rng.normal(2500, 400)), 0], "CORRELATION_BROKEN"
 
-    def _stuck(self):  # valeurs figées « parfaites » (pas de bruit)
-        return [23.0, 50.0, 120.0, 0], "STUCK"
+    def _stuck(self):  # valeurs figées « parfaites » (pas de bruit) à la baseline
+        return [22.0, 50.0, 650.0, 0], "STUCK"
 
-    def _injection(self):  # tout cassé (extrêmes)
+    def _injection(self):  # tout cassé (extrêmes) — ADC max = 4095
         return [float(self.rng.uniform(-10, 70)), float(self.rng.uniform(0, 100)),
-                float(self.rng.uniform(4000, 5000)), int(self.rng.integers(0, 2))], "INJECTION"
+                float(self.rng.uniform(3800, 4095)), int(self.rng.integers(0, 2))], "INJECTION"
 
 
 if __name__ == "__main__":
