@@ -267,6 +267,14 @@ def create_app(store: AlertStore | None = None) -> Flask:
         logger.info("Alerte SIMULÉE injectée : %s", type_anom)
         return jsonify({"status": "injected", "type": type_anom}), 201
 
+    @app.after_request
+    def _pas_de_cache(resp):
+        """Empêche le cache des pages HTML : on voit toujours la dernière interface."""
+        if resp.mimetype == "text/html":
+            resp.headers["Cache-Control"] = "no-store, must-revalidate"
+            resp.headers["Pragma"] = "no-cache"
+        return resp
+
     return app
 
 
@@ -618,10 +626,10 @@ def _page_cockpit() -> str:
     }catch(e){wait.textContent='❌ IA injoignable';}
     btn.disabled=false; inp.focus();
   }
-  // --- boucles ---
-  refreshStatus(); setInterval(refreshStatus,3000);
-  pollContext();   setInterval(pollContext,2000);
-  majCam();        setInterval(majCam,400);
+  // --- boucles (réactives) ---
+  refreshStatus(); setInterval(refreshStatus,2500);
+  pollContext();   setInterval(pollContext,900);     // alertes/état quasi temps réel
+  majCam();        setInterval(majCam,350);           // caméra fluide
 </script>
 </body></html>"""
 
@@ -799,7 +807,7 @@ function majAlertes(){{
 function inj(t){{fetch('/api/v1/simulate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{type:t}})}}).then(majAlertes);}}
 fetch('/api/v1/ollama-status').then(function(r){{return r.json();}}).then(function(d){{document.getElementById('ostat').textContent=d.online?'🟢 Ollama en ligne':'🔴 Ollama hors ligne';}});
 function ask(){{var q=document.getElementById('q').value;document.getElementById('rep').textContent='…';fetch('/api/v1/ollama',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{question:q}})}}).then(function(r){{return r.json();}}).then(function(d){{document.getElementById('rep').textContent=d.answer||('⚠️ '+(d.error||'')+' '+(d.suggestion||''));}});}}
-setInterval(majAlertes, 5000);   // rafraîchit juste les données, pas la page
+setInterval(majAlertes, 2000);   // rafraîchit juste les données, pas la page
 </script>
   <table>
     <thead><tr><th>Timestamp</th><th>Source</th><th>Type</th><th>Confiance</th><th>Sévérité</th><th>Détails</th></tr></thead>
@@ -872,7 +880,7 @@ def _page_live(mesures: list[dict]) -> str:
       document.getElementById('maj').textContent = new Date().toLocaleTimeString();
     }}).catch(function(){{}});
   }}
-  setInterval(majLive, 3000);
+  setInterval(majLive, 1500);
 </script>
 </body></html>"""
 
@@ -941,12 +949,29 @@ def _demarrer_prechauffe_ollama() -> None:
     threading.Thread(target=_prechauffe_ollama, daemon=True).start()
 
 
+SYSTEME_SENTINELX = (
+    "Tu es l'assistant IA intégré de SENTINEL-X, un système de SURVEILLANCE IoT "
+    "intelligent (workshop EPSI, équipe 6). Tu connais tout le projet :\n"
+    "- Matériel : un ESP32 lit la température et l'humidité (DHT22), le gaz/fumée "
+    "(MQ-2, auto-calibré : 0 au repos), la présence (PIR), affiche sur un écran OLED "
+    "et pilote 3 LEDs de statut (vert=normal, orange=avertissement, rouge=critique).\n"
+    "- Transmission : l'ESP32 envoie en WiFi via MQTT (broker Mosquitto) au PC.\n"
+    "- IA sur le PC : détection d'anomalies par un ENSEMBLE (Isolation Forest + LOF + "
+    "ECOD + Gradient Boosting), surveillance de la santé des capteurs, et VISION par "
+    "caméra (YOLOv8) qui détecte les personnes.\n"
+    "- Dashboard web sécurisé : login + 2FA (TOTP), anti-XSS, audit de sécurité "
+    "automatique, signature HMAC anti-injection, secrets protégés.\n"
+    "Tu réponds aux questions sur le projet ET sur l'état actuel des capteurs. "
+    "Sois clair, concret et bref (1 à 3 phrases)."
+)
+
+
 def _ollama_ask(question: str, context=None) -> dict:
-    """Pose une question à Ollama. Dégradé proprement si absent."""
+    """Pose une question à Ollama avec le contexte COMPLET du projet + les données live."""
     if not question:
         return {"error": "question vide"}
-    prompt = (f"Tu es expert en sécurité industrielle. Contexte capteurs : {context}. "
-              f"Question : {question}. Réponds en 1-2 phrases techniques et concrètes.")
+    prompt = (f"{SYSTEME_SENTINELX}\n\nÉTAT ACTUEL DU SYSTÈME : {context}\n\n"
+              f"QUESTION DE L'UTILISATEUR : {question}\n\nTa réponse :")
     try:
         # Timeout large : la 1ʳᵉ requête charge le modèle en RAM (20-60 s sur CPU).
         r = requests.post(f"{OLLAMA_URL}/api/generate",
