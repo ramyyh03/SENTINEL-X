@@ -19,6 +19,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# Windows : force l'UTF-8 sur la sortie pour éviter UnicodeEncodeError (cp1252)
+# quand on imprime « → » ou un emoji vers un fichier de log.
+for _flux in (sys.stdout, sys.stderr):
+    try:
+        _flux.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 import paho.mqtt.client as mqtt
 from colorama import Fore, Style, init as colorama_init
 from dotenv import load_dotenv

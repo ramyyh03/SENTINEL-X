@@ -52,9 +52,13 @@ def _popen_cache(cmd: list[str], log_path: Path) -> subprocess.Popen:
         # CREATE_NEW_PROCESS_GROUP (0x00000200) : survit à la fermeture du lanceur.
         flags = 0x08000000 | 0x00000200
     log = open(log_path, "a", encoding="utf-8")
+    # Force l'UTF-8 dans les process enfants : sinon, sous Windows (cp1252),
+    # imprimer un caractère comme « → » ou un emoji fait planter le service
+    # (UnicodeEncodeError) dès que la sortie est redirigée vers un fichier.
+    env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
     return subprocess.Popen(
         cmd, cwd=str(PROJECT_ROOT), stdout=log, stderr=subprocess.STDOUT,
-        stdin=subprocess.DEVNULL, creationflags=flags,
+        stdin=subprocess.DEVNULL, creationflags=flags, env=env,
         start_new_session=not IS_WINDOWS)
 
 
