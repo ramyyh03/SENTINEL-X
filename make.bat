@@ -20,6 +20,7 @@ if "%1"=="monitor-esp32" goto monitoresp32
 if "%1"=="config-esp32" goto configesp32
 if "%1"=="setup-2fa"   goto setup2fa
 if "%1"=="reset-db"    goto resetdb
+if "%1"=="clear-alerts" goto clearalerts
 if "%1"=="run-all"     goto runall
 if "%1"=="api"         goto api
 if "%1"=="api-stop"    goto apistop
@@ -106,6 +107,10 @@ goto end
 
 :resetdb
 %PY% scripts\reset_db.py
+goto end
+
+:clearalerts
+%PY% -m api.alert_store
 goto end
 
 :runall

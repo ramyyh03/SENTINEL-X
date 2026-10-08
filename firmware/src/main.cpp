@@ -490,7 +490,8 @@ void majStatutLeds() {
   bool connecte = (WiFi.status() == WL_CONNECTED) && mqtt.connected();
   bool recente  = derniereAlerte[0] != '\0' && millis() - alerteRecueMs < ALERTE_AFFICHAGE_MS;
   bool critique = recente && strcmp(alerteSeverite, "CRITICAL") == 0;
-  bool warning  = recente && !critique;
+  // orange seulement pour un vrai AVERTISSEMENT (pas pour un simple INFO).
+  bool warning  = recente && strcmp(alerteSeverite, "WARNING") == 0;
 
   digitalWrite(PIN_LED_ROUGE,  critique ? HIGH : LOW);
   digitalWrite(PIN_LED_ORANGE, (!critique && (warning || !connecte)) ? HIGH : LOW);

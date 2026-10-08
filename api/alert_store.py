@@ -99,3 +99,16 @@ class AlertStore:
         """Nombre total d'alertes stockées."""
         with closing(self._connect()) as conn:
             return conn.execute("SELECT COUNT(*) FROM alerts").fetchone()[0]
+
+    def vider(self) -> int:
+        """Supprime toutes les alertes (repart sur un historique propre)."""
+        with closing(self._connect()) as conn:
+            n = conn.execute("SELECT COUNT(*) FROM alerts").fetchone()[0]
+            conn.execute("DELETE FROM alerts")
+            conn.commit()
+            return n
+
+
+if __name__ == "__main__":        # `python -m api.alert_store` -> vide les alertes
+    supprimees = AlertStore().vider()
+    print(f"[OK] {supprimees} alerte(s) supprimée(s) — historique remis à zéro.")

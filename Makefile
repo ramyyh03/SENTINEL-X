@@ -101,6 +101,9 @@ setup-2fa: ## 🔐 Crée un compte dashboard protégé par mot de passe + 2FA (A
 reset-db: ## 🧹 Vide la base (enlève les données synthétiques → que du réel ensuite)
 	@$(PY) scripts/reset_db.py
 
+clear-alerts: ## 🧽 Vide l'historique des alertes (repart propre)
+	@$(PY) -m api.alert_store
+
 run-all: ## 🚀 Lance tout en arrière-plan (broker + API + ingestion + détection)
 	@mkdir -p logs
 	@$(DC) up -d

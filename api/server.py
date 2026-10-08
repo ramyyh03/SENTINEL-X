@@ -418,10 +418,12 @@ def _niveau_alerte(latest: dict | None) -> tuple[str, str]:
     age = _age_depuis(latest.get("timestamp"))
     if age is None or age > NIVEAU_FENETRE_S:
         return "vert", "Normal"
-    sev = (latest.get("details") or {}).get("severity", "WARNING")
+    sev = (latest.get("details") or {}).get("severity", "INFO")
     if sev in ("CRITICAL", "HIGH"):
         return "rouge", "Alerte critique"
-    return "orange", "Avertissement"
+    if sev == "WARNING":
+        return "orange", "Avertissement"
+    return "vert", "Normal"      # INFO = pas d'alarme -> reste vert
 
 
 def _age_depuis(ts) -> float | None:
