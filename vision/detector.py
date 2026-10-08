@@ -49,7 +49,7 @@ MAX_LATENCY_MS = 100          # objectif : traiter une frame en < 100 ms
 # YOLO est lent sur CPU : on ne l'exécute qu'1 frame sur N et on réutilise les
 # dernières boîtes entre-temps -> le flux reste fluide (moins de latence).
 DETECT_EVERY = int(os.getenv("DETECT_EVERY", "3"))
-ALERT_COOLDOWN_S = 5          # anti-spam : pas 2 alertes identiques en < 5 s
+ALERT_COOLDOWN_S = 30         # anti-spam : une alerte caméra au plus toutes les 30 s
 # Index caméra : 0 = 1re caméra. Sur un PC avec webcam intégrée, la webcam USB
 # (UGREEN CM678) est souvent l'index 1 → configurable via .env ou --camera.
 CAMERA_INDEX = int(os.getenv("CAMERA_INDEX", "1"))   # défaut : webcam externe (UGREEN)

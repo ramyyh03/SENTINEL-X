@@ -176,10 +176,12 @@ def cmd_detect(once: bool) -> int:
         window_s=int(os.getenv("ALERT_WINDOW", "300")),
     )
     buffer: deque = deque(maxlen=BUFFER_MAX)
-    dernier_id = 0
+    # On démarre à la DERNIÈRE mesure : on ne RE-TRAITE PAS l'historique (sinon on
+    # régénère des alertes sur de vieilles données). Seules les NOUVELLES comptent.
+    dernier_id = _dernier_id_actuel()
     seuil = ensemble.threshold if ensemble else detecteur.threshold
     log("INFO", Fore.MAGENTA,
-        f"Détection démarrée (seuil={seuil}, API={API_ENDPOINT}). Ctrl+C pour arrêter.")
+        f"Détection démarrée (seuil={seuil}, à partir de l'id {dernier_id}). Ctrl+C pour arrêter.")
 
     while True:
         for row in _lire_nouvelles_lignes(dernier_id):
@@ -190,6 +192,12 @@ def cmd_detect(once: bool) -> int:
         time.sleep(POLL_SECONDS)
     log("OK", Fore.GREEN, f"Terminé (dernier id traité = {dernier_id}).")
     return 0
+
+
+def _dernier_id_actuel() -> int:
+    """Plus grand id de sensor_data (0 si vide) — point de départ = pas d'historique."""
+    with sqlite3.connect(DB_PATH) as conn:
+        return conn.execute("SELECT COALESCE(MAX(id), 0) FROM sensor_data").fetchone()[0]
 
 
 def _lire_nouvelles_lignes(dernier_id: int) -> list[dict]:
