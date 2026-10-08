@@ -396,12 +396,44 @@ def _statut_systeme(db_path) -> dict:
             "maj": datetime.now(timezone.utc).strftime("%H:%M:%S UTC")}
 
 
+NIVEAU_FENETRE_S = 30          # une alerte "colore" l'état pendant 30 s
+
+
+def _niveau_alerte(latest: dict | None) -> tuple[str, str]:
+    """État global (vert/orange/rouge) selon la dernière alerte récente.
+
+    vert = normal · orange = avertissement récent · rouge = alerte critique récente.
+    Retourne (niveau, label).
+    """
+    if not latest:
+        return "vert", "Normal"
+    age = _age_depuis(latest.get("timestamp"))
+    if age is None or age > NIVEAU_FENETRE_S:
+        return "vert", "Normal"
+    sev = (latest.get("details") or {}).get("severity", "WARNING")
+    if sev in ("CRITICAL", "HIGH"):
+        return "rouge", "Alerte critique"
+    return "orange", "Avertissement"
+
+
+def _age_depuis(ts) -> float | None:
+    """Âge en secondes d'un timestamp ISO, ou None si illisible."""
+    try:
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - dt).total_seconds()
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
 def _contexte_ia(magasin) -> dict:
     """Résumé de l'état réel (capteurs + alertes) donné à l'IA et au temps réel."""
     mesures = _lire_capteurs(magasin.db_path, 1)
     d = mesures[0] if mesures else {}
     alertes = magasin.recent(5)
     latest = alertes[0] if alertes else None
+    niveau, niveau_label = _niveau_alerte(latest)
     presence = "oui" if d.get("presence") else "non"
     resume = (
         f"Mesures actuelles : température {d.get('temp', '?')} °C, "
@@ -414,7 +446,8 @@ def _contexte_ia(magasin) -> dict:
         resume += (f" Dernière alerte : {latest.get('type', '?')} "
                    f"[{details.get('severity', '?')}] — {details.get('context', '')}.")
     return {"resume": resume, "sensors": d, "alerts_count": magasin.count(),
-            "latest_alert": latest, "maj": datetime.now(timezone.utc).strftime("%H:%M:%S")}
+            "latest_alert": latest, "niveau": niveau, "niveau_label": niveau_label,
+            "maj": datetime.now(timezone.utc).strftime("%H:%M:%S")}
 
 
 _SECU_COULEURS = {"CRITICAL": "#e74c3c", "HIGH": "#e74c3c", "MEDIUM": "#f39c12",
@@ -435,6 +468,9 @@ def _page_cockpit() -> str:
   header{padding:12px 18px;background:#161b22;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:14px}
   header h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.3px}
   #verdict{font-size:13px;font-weight:600;padding:4px 10px;border-radius:20px;background:#21262d}
+  .etat{font-size:14px;font-weight:800;padding:5px 14px;border-radius:20px;background:#0d1117;border:1px solid #30363d;letter-spacing:.3px}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+  .etat.pulse{animation:pulse 1s infinite}
   .clock{margin-left:auto;color:#8b949e;font-size:12px;font-variant-numeric:tabular-nums}
   /* Corps : contenu + chat */
   main{display:grid;grid-template-columns:1fr 360px;min-height:0}
@@ -483,6 +519,7 @@ def _page_cockpit() -> str:
 <body>
   <header>
     <h1>🛡️ SENTINEL-X</h1>
+    <span id="etat" class="etat">● —</span>
     <span id="verdict">Analyse…</span>
     <span class="clock" id="clock">—</span>
   </header>
@@ -544,6 +581,12 @@ def _page_cockpit() -> str:
       const c=await (await fetch('/api/v1/context')).json();
       ctxResume=c.resume||'';
       document.getElementById('clock').textContent=c.maj||'';
+      // Indicateur d'état coloré (reflète les LEDs de l'ESP32)
+      const NIV={vert:'#3fb950',orange:'#d29922',rouge:'#f85149'};
+      const e=document.getElementById('etat'), col=NIV[c.niveau]||'#3fb950';
+      e.textContent='● '+(c.niveau_label||'Normal');
+      e.style.color=col; e.style.borderColor=col; e.style.boxShadow='0 0 10px '+col+'55';
+      e.classList.toggle('pulse', c.niveau==='rouge');
       const la=c.latest_alert, ts=la?la.timestamp:null;
       if(lastAlertTs===undefined){lastAlertTs=ts;}       // init sans toast
       else if(ts && ts!==lastAlertTs){toast(la);lastAlertTs=ts;}

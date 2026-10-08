@@ -19,8 +19,12 @@ _client: Any = None          # singleton paresseux (une seule connexion)
 
 
 def _actif() -> bool:
-    """La publication MQTT des alertes est-elle demandée et possible ?"""
-    return mqtt is not None and os.getenv("ALERT_MQTT_ENABLED", "false").lower() == "true"
+    """La publication MQTT des alertes est-elle possible ? (activée par défaut).
+
+    Publie les alertes sur le topic pour piloter l'OLED et les LEDs de l'ESP32.
+    Dégrade proprement si paho/broker absent.
+    """
+    return mqtt is not None and os.getenv("ALERT_MQTT_ENABLED", "true").lower() == "true"
 
 
 def _connecter() -> Any:
