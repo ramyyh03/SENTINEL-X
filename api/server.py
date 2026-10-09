@@ -564,7 +564,7 @@ def _page_cockpit() -> str:
   .dot{width:9px;height:9px;border-radius:50%;margin-right:8px;display:inline-block;box-shadow:0 0 6px currentColor}
   /* Onglets + vue */
   .panel{background:#161b22;border:1px solid #30363d;border-radius:12px;overflow:hidden;display:flex;flex-direction:column;flex:1;min-height:360px}
-  .tabs{display:flex;gap:4px;padding:8px;border-bottom:1px solid #30363d;background:#0f141a}
+  .tabs{display:flex;flex-wrap:wrap;gap:4px;padding:8px;border-bottom:1px solid #30363d;background:#0f141a}
   .tabs button{flex:0 0 auto;background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:8px;
                padding:7px 14px;font-size:13px;cursor:pointer;transition:.15s}
   .tabs button.on{background:#1f6feb;border-color:#1f6feb}
