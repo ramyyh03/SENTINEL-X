@@ -412,39 +412,6 @@ def _statut_systeme(db_path) -> dict:
             "maj": datetime.now(timezone.utc).strftime("%H:%M:%S UTC")}
 
 
-NIVEAU_FENETRE_S = 30          # une alerte "colore" l'état pendant 30 s
-
-
-def _niveau_alerte(latest: dict | None) -> tuple[str, str]:
-    """État global (vert/orange/rouge) selon la dernière alerte récente.
-
-    vert = normal · orange = avertissement récent · rouge = alerte critique récente.
-    Retourne (niveau, label).
-    """
-    if not latest:
-        return "vert", "Normal"
-    age = _age_depuis(latest.get("timestamp"))
-    if age is None or age > NIVEAU_FENETRE_S:
-        return "vert", "Normal"
-    sev = (latest.get("details") or {}).get("severity", "INFO")
-    if sev in ("CRITICAL", "HIGH"):
-        return "rouge", "Alerte critique"
-    if sev == "WARNING":
-        return "orange", "Avertissement"
-    return "vert", "Normal"      # INFO = pas d'alarme -> reste vert
-
-
-def _age_depuis(ts) -> float | None:
-    """Âge en secondes d'un timestamp ISO, ou None si illisible."""
-    try:
-        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return (datetime.now(timezone.utc) - dt).total_seconds()
-    except (ValueError, AttributeError, TypeError):
-        return None
-
-
 VISION_STATUS = PROJECT_ROOT / "data" / "vision_status.json"
 CAM_FRAIS_S = 5                 # statut caméra valable 5 s
 
@@ -469,28 +436,37 @@ def _niveau_camera() -> tuple[str, str] | None:
 
 _ORDRE_NIVEAU = {"vert": 0, "orange": 1, "rouge": 2}
 _NIVEAU_SEVERITE = {"vert": "INFO", "orange": "WARNING", "rouge": "CRITICAL"}
+_SEVERITE_NIVEAU = {"INFO": "vert", "WARNING": "orange", "CRITICAL": "rouge"}
+_LABEL_NIVEAU = {"vert": "Normal", "orange": "Avertissement", "rouge": "Alerte critique"}
 
 
 def _etat_consolide(magasin) -> dict:
     """État UNIQUE (vert/orange/rouge) partagé par l'app, l'OLED et les LEDs.
 
-    Combine la dernière alerte récente (≤ 30 s) et la caméra live (présence) ;
-    la source la plus grave l'emporte. C'est la seule « vérité » du système :
-    l'app l'affiche, le serveur la publie vers l'ESP32 (OLED + LEDs).
+    Vérité unique : le moteur de corrélation (predictive/correlation.py) appliqué
+    aux mesures LIVE (température, gaz, PIR) + la caméra en direct. La source la
+    plus grave l'emporte. Comme c'est basé sur les valeurs ACTUELLES, un état qui
+    dure (ex. chaleur) reste coloré en continu — pas de clignotement.
     """
-    alertes = magasin.recent(1)
-    latest = alertes[0] if alertes else None
-    niveau, label = _niveau_alerte(latest)
-    contexte = ""
-    if niveau != "vert" and latest:
-        details = latest.get("details") or {}
-        contexte = details.get("context") or latest.get("type", "")
-    # La caméra LIVE prend le dessus si elle est plus grave (réaction instantanée).
+    from predictive.correlation import analyser
+    niveau, severity, contexte = "vert", "INFO", ""
+    age = _age_derniere_mesure(magasin.db_path)
+    recents = _lire_capteurs(magasin.db_path, 1)
+    if recents and age is not None and age <= ESP32_FRAIS_S:
+        d = recents[0]
+        valeurs = {"temp": d.get("temp"), "humidity": d.get("humidity"),
+                   "gas": d.get("gas"), "presence": d.get("presence")}
+        sc = analyser(valeurs, {}, cam_personnes=0)   # capteurs seuls (caméra gérée à part)
+        severity = sc.severite
+        niveau = _SEVERITE_NIVEAU[severity]
+        contexte = sc.contexte if niveau != "vert" else ""
+    # Caméra LIVE (comportement validé : 1 = orange, 2+ = rouge) : prime si plus grave.
     cam = _niveau_camera()
     if cam and _ORDRE_NIVEAU[cam[0]] > _ORDRE_NIVEAU[niveau]:
-        niveau, label, contexte = cam[0], cam[1], cam[1]
-    return {"niveau": niveau, "label": label,
-            "severity": _NIVEAU_SEVERITE[niveau], "context": contexte}
+        niveau, contexte = cam[0], cam[1]
+        severity = _NIVEAU_SEVERITE[niveau]
+    return {"niveau": niveau, "label": _LABEL_NIVEAU[niveau],
+            "severity": severity, "context": contexte}
 
 
 def _contexte_ia(magasin) -> dict:

@@ -1,17 +1,24 @@
 """SENTINEL-X — Fusion multi-capteurs (corrélation scientifique).
 
 Au lieu de seuils isolés, on croise température, humidité, gaz, présence (PIR)
-et caméra pour identifier des SCÉNARIOS réels. Une alerte grave exige plusieurs
-capteurs cohérents → beaucoup moins de faux positifs.
+et caméra pour identifier des SCÉNARIOS réels, chacun associé à une couleur :
+    🟢 vert (INFO)  ·  🟡 jaune (WARNING)  ·  🔴 rouge (CRITICAL)
+
+Seuils décidés avec l'équipe :
+    Température : vert ≤ 28°C · jaune 28–32°C · rouge > 32°C
+    Gaz (0 = air propre) : vert < 100 · jaune 100–299 · rouge ≥ 300
+    PIR / caméra : toute présence = jaune ; plusieurs personnes (caméra) = rouge
 
 Scénarios (du plus grave au plus bénin) :
-    1. INCENDIE   : gaz↑ + température↑ + humidité↓   (combustion)
-    2. FUITE_GAZ  : gaz↑ sans montée thermique         (fuite)
-    3. INTRUSION  : caméra (personne) + PIR (mouvement) (2 capteurs = confirmé)
-    4. PRESENCE   : caméra OU PIR seul                  (à confirmer)
-    5. CHALEUR    : indice de chaleur (humidex) élevé   (inconfort/risque)
-    6. CONDENSATION : humidité haute + température basse (moisissure)
-    7. NORMAL
+    1. INCENDIE    : gaz élevé + forte chaleur / combustion       🔴
+    2. FUITE_GAZ   : gaz élevé sans chaleur                        🔴
+    3. SURCHAUFFE  : température critique (> 32°C)                 🔴
+    4. FOULE       : plusieurs personnes (caméra)                 🔴
+    5. GAZ_FAIBLE  : gaz léger (100–299)                          🟡
+    6. PRESENCE    : caméra (1) OU mouvement (PIR)                🟡
+    7. CHALEUR     : température élevée (> 28°C) / humidex         🟡
+    8. CONDENSATION: humidité haute + température basse           🟢
+    9. NORMAL                                                     🟢
 """
 from __future__ import annotations
 
@@ -19,10 +26,13 @@ import math
 from dataclasses import dataclass
 
 # --- Seuils (constantes nommées, pas de valeurs magiques) ------------------- #
-GAZ_ELEVE = 250.0        # gaz NORMALISÉ (0 = air propre) au-dessus = gaz présent
-TEMP_MONTE = 2.0         # °C de hausse sur la fenêtre = tendance à la hausse
-HUM_BAISSE = -3.0        # % de baisse sur la fenêtre = air qui s'assèche
-HUMIDEX_DANGER = 40.0    # indice de chaleur : ≥ 40 = inconfort/risque
+TEMP_JAUNE = 28.0        # °C : au-dessus = avertissement (chaleur)
+TEMP_ROUGE = 32.0        # °C : au-dessus = critique (surchauffe / risque feu)
+GAZ_JAUNE = 100.0        # gaz normalisé (0 = air propre) : ≥ = gaz léger détecté
+GAZ_ROUGE = 300.0        # gaz normalisé : ≥ = gaz/fumée important (critique)
+TEMP_MONTE = 2.0         # °C de hausse sur la fenêtre (signature d'incendie)
+HUM_BAISSE = -3.0        # % de baisse sur la fenêtre (air qui s'assèche)
+HUMIDEX_DANGER = 40.0    # indice de chaleur ressentie : ≥ 40 = inconfort/risque
 HUM_CONDENSATION = 75.0  # % d'humidité élevée
 TEMP_FROID = 18.0        # °C : surface froide -> condensation possible
 
@@ -64,43 +74,53 @@ def analyser(valeurs: dict, tendances: dict, cam_personnes: int = 0) -> Scenario
     dtemp = float(tendances.get("dtemp", 0) or 0)
     dhum = float(tendances.get("dhum", 0) or 0)
 
-    # 1. INCENDIE : fumée + température qui monte + humidité qui chute
-    if gaz > GAZ_ELEVE and dtemp >= TEMP_MONTE and dhum <= HUM_BAISSE:
+    # ===== 🔴 CRITIQUE ======================================================= #
+    # 1. INCENDIE : fumée + forte chaleur, OU signature de combustion (temp↑ + air↓)
+    if gaz >= GAZ_ROUGE and (temp > TEMP_ROUGE or (dtemp >= TEMP_MONTE and dhum <= HUM_BAISSE)):
         return Scenario("INCENDIE", "CRITICAL",
-                        "🔥 Fumée + température en hausse + air qui s'assèche → incendie probable",
+                        "🔥 Fumée + chaleur anormale → incendie probable",
                         "Évacuer, couper l'alimentation, alerter les secours")
 
     # 2. FUITE DE GAZ : gaz élevé sans montée thermique
-    if gaz > GAZ_ELEVE:
+    if gaz >= GAZ_ROUGE:
         return Scenario("FUITE_GAZ", "CRITICAL",
-                        "💨 Gaz/fumée élevé sans hausse de température → fuite de gaz probable",
+                        f"💨 Gaz/fumée élevé ({gaz:.0f}) → fuite de gaz probable",
                         "Ventiler, couper la source de gaz, éviter toute étincelle")
 
-    # 3. INTRUSION CONFIRMÉE : caméra + PIR (deux capteurs indépendants)
-    if cam_personnes >= 1 and pir:
-        return Scenario("INTRUSION", "CRITICAL",
-                        f"🚨 {cam_personnes} personne(s) (caméra) + mouvement (PIR) → intrusion confirmée",
-                        "Vérifier les accès et consulter la vidéosurveillance")
+    # 3. SURCHAUFFE : température critique, même sans gaz
+    if temp > TEMP_ROUGE:
+        return Scenario("SURCHAUFFE", "CRITICAL",
+                        f"🌡️ Température critique ({temp:.0f}°C > {TEMP_ROUGE:.0f}) → surchauffe / risque feu",
+                        "Vérifier la source de chaleur, couper les équipements chauffants")
 
-    # 4. PRÉSENCE NON CONFIRMÉE : un seul capteur de présence
+    # 4. FOULE : plusieurs personnes vues par la caméra
     if cam_personnes >= 2:
         return Scenario("FOULE", "CRITICAL",
-                        f"👥 {cam_personnes} personnes détectées par la caméra",
+                        f"👥 {cam_personnes} personnes détectées (caméra)",
                         "Vérifier la zone (rassemblement inattendu ?)")
+
+    # ===== 🟡 AVERTISSEMENT ================================================== #
+    # 5. GAZ FAIBLE : présence de gaz à surveiller
+    if gaz >= GAZ_JAUNE:
+        return Scenario("GAZ_FAIBLE", "WARNING",
+                        f"💨 Gaz léger détecté ({gaz:.0f}) → à surveiller",
+                        "Aérer la zone et surveiller l'évolution")
+
+    # 6. PRÉSENCE : caméra (1 personne) OU mouvement (PIR)
     if cam_personnes == 1 or pir:
-        source = "caméra" if cam_personnes == 1 else "détecteur de mouvement"
+        source = "caméra" if cam_personnes == 1 else "mouvement (PIR)"
         return Scenario("PRESENCE", "WARNING",
-                        f"👤 Présence détectée ({source}) — à confirmer",
+                        f"👤 Présence détectée ({source})",
                         "Vérifier si la présence est attendue")
 
-    # 5. RISQUE THERMIQUE : indice de chaleur élevé
-    hx = humidex(temp, hum)
-    if hx >= HUMIDEX_DANGER:
+    # 7. CHALEUR : température élevée OU indice de chaleur ressentie élevé
+    if temp > TEMP_JAUNE or humidex(temp, hum) >= HUMIDEX_DANGER:
         return Scenario("CHALEUR", "WARNING",
-                        f"🌡️ Indice de chaleur élevé (humidex {hx:.0f}) → inconfort / risque",
+                        f"🌡️ Température élevée ({temp:.0f}°C) → ambiance chaude",
                         "Ventiler ou rafraîchir la zone")
 
-    # 6. CONDENSATION / MOISISSURE : humidité haute + température basse
+    # ===== 🟢 INFO ========================================================== #
+    # 8. CONDENSATION / MOISISSURE : humidité haute + température basse
     if hum >= HUM_CONDENSATION and temp <= TEMP_FROID:
         return Scenario("CONDENSATION", "INFO",
                         "💧 Humidité élevée à basse température → risque de condensation/moisissure",
