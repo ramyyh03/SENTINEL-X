@@ -37,6 +37,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 colorama_init(autoreset=True)
 
+# Capteurs neutres : la vision ne juge que la caméra, le moteur de corrélation
+# décide de la gravité selon le profil calibré (ex. boulangerie : 2 pers = OK).
+_VALEURS_NEUTRES = {"temp": 22, "humidity": 50, "gas": 0, "presence": 0}
+
 # --- Constantes ---
 MODEL_NAME = "yolov8n.pt"      # nano : léger + rapide (CPU / Apple Silicon)
 PERSON_CLASS_ID = 0            # classe "person" dans COCO
@@ -105,13 +109,23 @@ class VisionDetector:
         return detections, latence_ms
 
 
-def construire_alerte(detections: list[dict]) -> dict:
-    """Construit l'alerte JSON au format SENTINEL-X (immuable)."""
+def evaluer_scenario(nb_personnes: int):
+    """Gravité du nombre de personnes selon le PROFIL calibré (source unique).
+
+    Retourne un Scenario (INFO si le compte est considéré normal pour ce lieu).
+    """
+    from predictive.correlation import analyser
+    return analyser(_VALEURS_NEUTRES, {}, cam_personnes=nb_personnes)
+
+
+def construire_alerte(detections: list[dict], scenario) -> dict:
+    """Construit l'alerte JSON au format SENTINEL-X (immuable).
+
+    La gravité et le contexte viennent du moteur de corrélation (profil calibré),
+    pour rester cohérents avec l'app, l'OLED et les LEDs.
+    """
     confiances = [d["confidence"] for d in detections]
     nb = len(detections)
-    # Sévérité : une présence = WARNING ; plusieurs personnes = CRITICAL.
-    # (La "confidence" YOLO mesure la certitude de détection, PAS la gravité.)
-    severite = "CRITICAL" if nb >= 2 else "WARNING"
     return {
         "source": "ia_vision",
         "type": "intrusion_detected",
@@ -121,8 +135,8 @@ def construire_alerte(detections: list[dict]) -> dict:
             "persons_detected": nb,
             "max_confidence": max(confiances),
             "bounding_boxes": [d["box"] for d in detections],
-            "severity": severite,
-            "context": f"{nb} personne(s) détectée(s) par la caméra",
+            "severity": scenario.severite,
+            "context": scenario.contexte or f"{nb} personne(s) détectée(s) par la caméra",
         },
     }
 
@@ -276,9 +290,12 @@ def run_detection(api_url: str | None = None, simulate: bool = False,
 
             if detections:
                 maintenant = time.monotonic()
-                if maintenant - derniere_alerte >= ALERT_COOLDOWN_S:
+                scenario = evaluer_scenario(len(detections))
+                # On n'alerte QUE si le compte dépasse ce que le profil juge normal
+                # (ex. boulangerie cam_ok=2 : 2 personnes = INFO -> pas d'alerte).
+                if scenario.severite != "INFO" and maintenant - derniere_alerte >= ALERT_COOLDOWN_S:
                     derniere_alerte = maintenant
-                    alerte = construire_alerte(detections)
+                    alerte = construire_alerte(detections, scenario)
                     log("INTRUSION", Fore.RED,
                         f"{alerte['details']['persons_detected']} personne(s), "
                         f"confiance max {alerte['confidence']} ({latence:.0f} ms)")

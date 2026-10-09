@@ -151,7 +151,7 @@ def create_app(store: AlertStore | None = None) -> Flask:
         if auth.verifier(u, p, code):
             session["user"] = u
             logger.info("Connexion dashboard réussie : %s", u)
-            return redirect(url_for("dashboard"))
+            return redirect(url_for("cockpit"))   # cockpit tout-en-un (onglets + chat IA)
         logger.warning("Connexion dashboard refusée : %s", u)
         return _page_login(erreur="Identifiant, mot de passe ou code 2FA invalide."), 401
 
