@@ -133,6 +133,7 @@ def create_app(store: AlertStore | None = None) -> Flask:
     app = Flask(__name__)
     app.secret_key = _secret_key()  # nécessaire aux sessions (login)
     magasin = store or AlertStore()
+    app.config["MAGASIN"] = magasin  # réutilisé par la boucle d'état live (main)
 
     # Préchauffe Mistral en arrière-plan : charge le modèle en RAM dès le
     # démarrage pour que le 1er « Tester l'IA » réponde vite (sinon ~30-60 s).
@@ -467,6 +468,29 @@ def _niveau_camera() -> tuple[str, str] | None:
 
 
 _ORDRE_NIVEAU = {"vert": 0, "orange": 1, "rouge": 2}
+_NIVEAU_SEVERITE = {"vert": "INFO", "orange": "WARNING", "rouge": "CRITICAL"}
+
+
+def _etat_consolide(magasin) -> dict:
+    """État UNIQUE (vert/orange/rouge) partagé par l'app, l'OLED et les LEDs.
+
+    Combine la dernière alerte récente (≤ 30 s) et la caméra live (présence) ;
+    la source la plus grave l'emporte. C'est la seule « vérité » du système :
+    l'app l'affiche, le serveur la publie vers l'ESP32 (OLED + LEDs).
+    """
+    alertes = magasin.recent(1)
+    latest = alertes[0] if alertes else None
+    niveau, label = _niveau_alerte(latest)
+    contexte = ""
+    if niveau != "vert" and latest:
+        details = latest.get("details") or {}
+        contexte = details.get("context") or latest.get("type", "")
+    # La caméra LIVE prend le dessus si elle est plus grave (réaction instantanée).
+    cam = _niveau_camera()
+    if cam and _ORDRE_NIVEAU[cam[0]] > _ORDRE_NIVEAU[niveau]:
+        niveau, label, contexte = cam[0], cam[1], cam[1]
+    return {"niveau": niveau, "label": label,
+            "severity": _NIVEAU_SEVERITE[niveau], "context": contexte}
 
 
 def _contexte_ia(magasin) -> dict:
@@ -475,11 +499,8 @@ def _contexte_ia(magasin) -> dict:
     d = mesures[0] if mesures else {}
     alertes = magasin.recent(5)
     latest = alertes[0] if alertes else None
-    niveau, niveau_label = _niveau_alerte(latest)
-    # La caméra LIVE prend le dessus si elle est plus grave (réaction instantanée).
-    cam = _niveau_camera()
-    if cam and _ORDRE_NIVEAU[cam[0]] > _ORDRE_NIVEAU[niveau]:
-        niveau, niveau_label = cam
+    etat = _etat_consolide(magasin)
+    niveau, niveau_label = etat["niveau"], etat["label"]
     presence = "oui" if d.get("presence") else "non"
     resume = (
         f"Mesures actuelles : température {d.get('temp', '?')} °C, "
@@ -987,6 +1008,37 @@ def _demarrer_prechauffe_ollama() -> None:
     threading.Thread(target=_prechauffe_ollama, daemon=True).start()
 
 
+ETAT_POLL_S = 0.5          # fréquence de vérification (réaction quasi instantanée)
+ETAT_BATTEMENT_S = 5       # on republie au moins toutes les 5 s (garde la LED vivante)
+
+
+def _boucle_etat_live(magasin) -> None:
+    """Publie l'état consolidé vers l'ESP32 (OLED + LEDs) : dès qu'il change, et
+    par battement régulier. Garantit que l'écran et les LEDs = ce qu'affiche l'app."""
+    from predictive.alert_publisher import publier_alerte_mqtt
+    derniere_cle = None
+    dernier_envoi = 0.0
+    while True:
+        try:
+            etat = _etat_consolide(magasin)
+            cle = (etat["severity"], etat["context"])
+            maintenant = time.monotonic()
+            if cle != derniere_cle or maintenant - dernier_envoi >= ETAT_BATTEMENT_S:
+                publier_alerte_mqtt({"type": "ETAT", "details": {
+                    "context": etat["context"], "severity": etat["severity"]}})
+                derniere_cle, dernier_envoi = cle, maintenant
+        except Exception as exc:                       # un thread démon ne doit jamais mourir
+            logger.debug("Publication état live échouée : %s", exc)
+        time.sleep(ETAT_POLL_S)
+
+
+def _demarrer_etat_live(magasin) -> None:
+    """Lance la publication de l'état live dans un thread démon (opt-out par env)."""
+    if os.getenv("ETAT_LIVE_ENABLED", "true").lower() != "true":
+        return
+    threading.Thread(target=_boucle_etat_live, args=(magasin,), daemon=True).start()
+
+
 SYSTEME_SENTINELX = (
     "Tu es l'assistant IA intégré de SENTINEL-X, un système de SURVEILLANCE IoT "
     "intelligent (workshop EPSI, équipe 6). Tu connais tout le projet :\n"
@@ -1050,6 +1102,7 @@ def _alerte_simulee(type_anom: str) -> dict:
 def main() -> int:
     """Lance le serveur (bloquant)."""
     app = create_app()
+    _demarrer_etat_live(app.config["MAGASIN"])  # OLED + LEDs = état de l'app
     logger.info("API SENTINEL-X démarrée sur http://%s:%s (dashboard /dashboard)",
                 API_HOST, API_PORT)
     # threaded=True : plusieurs visiteurs du dashboard servis en parallèle

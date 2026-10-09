@@ -62,6 +62,19 @@ def _popen_cache(cmd: list[str], log_path: Path) -> subprocess.Popen:
         start_new_session=not IS_WINDOWS)
 
 
+def vider_alertes() -> None:
+    """Vide l'historique des alertes avant de démarrer (fini les anciennes alertes).
+
+    Via un sous-processus isolé : évite tout souci de chemin d'import depuis le lanceur.
+    """
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "api.alert_store"],
+            cwd=str(PROJECT_ROOT), capture_output=True, timeout=15, check=False)
+    except (subprocess.SubprocessError, FileNotFoundError) as exc:
+        print(f"[WARN] alertes non videes : {exc}")
+
+
 def demarrer_broker() -> bool:
     """Démarre le broker MQTT dev (Docker). Tolérant si Docker est absent."""
     try:
@@ -147,6 +160,7 @@ def main() -> int:
         return 0
 
     print("SENTINEL-X — démarrage en arrière-plan…")
+    vider_alertes()                 # repart sur un historique propre (pas d'anciennes alertes)
     broker_ok = demarrer_broker()
     demarrer_services()
     api_ok = attendre_api()

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 try:
@@ -15,7 +16,15 @@ except ImportError:          # paho absent : publication désactivée proprement
     mqtt = None  # type: ignore
 
 ALERT_TOPIC = os.getenv("ALERT_TOPIC", "sentinel/alerts")
+OLED_LARGEUR = 40            # ~largeur lisible sur l'écran OLED de l'ESP32
 _client: Any = None          # singleton paresseux (une seule connexion)
+
+
+def _texte_oled(txt: str) -> str:
+    """Nettoie un contexte pour l'OLED (ASCII only : l'écran n'affiche pas les emojis)."""
+    propre = (txt or "").encode("ascii", "ignore").decode("ascii")
+    propre = re.sub(r"\s+", " ", propre).strip()
+    return propre[:OLED_LARGEUR]
 
 
 def _actif() -> bool:
@@ -61,7 +70,7 @@ def publier_alerte_mqtt(alerte: dict[str, Any]) -> bool:
     compacte = {
         "type": alerte.get("type", "ALERTE"),
         "details": {
-            "context": details.get("context", ""),
+            "context": _texte_oled(details.get("context", "")),
             "severity": details.get("severity", "WARNING"),  # pilote la LED (rouge si CRITICAL)
         },
     }

@@ -300,10 +300,15 @@ void surMessageMQTT(char* topic, byte* payload, unsigned int longueur) {
   const char* type = doc["type"] | "ALERTE";
   const char* ctx  = doc["details"]["context"] | "";
   const char* sev  = doc["details"]["severity"] | "WARNING";
-  snprintf(derniereAlerte, sizeof(derniereAlerte), "%s %s", type, ctx);
-  snprintf(alerteSeverite, sizeof(alerteSeverite), "%s", sev);
-  alerteRecueMs = millis();
-  Serial.printf(">>> ALERTE recue [%s] : %s\n", alerteSeverite, derniereAlerte);
+  snprintf(alerteSeverite, sizeof(alerteSeverite), "%s", sev);  // pilote les LEDs
+  // INFO = état normal : on garde juste la LED verte, aucune bannière à l'écran.
+  if (strcmp(sev, "INFO") == 0) {
+    derniereAlerte[0] = '\0';
+  } else {
+    snprintf(derniereAlerte, sizeof(derniereAlerte), "%s %s", type, ctx);
+    alerteRecueMs = millis();
+  }
+  Serial.printf(">>> ETAT recu [%s] : %s\n", alerteSeverite, derniereAlerte);
 }
 #endif
 
@@ -488,10 +493,11 @@ void afficherOLED() {
 //   VERT   = tout va bien (connecté, aucune alerte récente)
 void majStatutLeds() {
   bool connecte = (WiFi.status() == WL_CONNECTED) && mqtt.connected();
-  bool recente  = derniereAlerte[0] != '\0' && millis() - alerteRecueMs < ALERTE_AFFICHAGE_MS;
-  bool critique = recente && strcmp(alerteSeverite, "CRITICAL") == 0;
-  // orange seulement pour un vrai AVERTISSEMENT (pas pour un simple INFO).
-  bool warning  = recente && strcmp(alerteSeverite, "WARNING") == 0;
+  // La LED reflète EN CONTINU le dernier état reçu du serveur (pas de minuterie) :
+  // elle reste allumée tant que l'état ne change pas -> identique à l'app. Le
+  // serveur envoie un battement régulier (INFO) qui remet au vert quand c'est fini.
+  bool critique = connecte && strcmp(alerteSeverite, "CRITICAL") == 0;
+  bool warning  = connecte && strcmp(alerteSeverite, "WARNING") == 0;
 
   digitalWrite(PIN_LED_ROUGE,  critique ? HIGH : LOW);
   digitalWrite(PIN_LED_ORANGE, (!critique && (warning || !connecte)) ? HIGH : LOW);
