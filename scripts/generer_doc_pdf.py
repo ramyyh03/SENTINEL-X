@@ -101,6 +101,17 @@ def mono(lines):
     return Paragraph("<br/>".join(clean(l).replace(" ", "&nbsp;") for l in lines), S["mono"])
 
 
+def schema(lines):
+    """Comme mono() mais PRESERVE l'alignement (n'ecrase pas les espaces multiples)."""
+    def prep(l):
+        for k, v in _EMOJIS.items():
+            l = l.replace(k, v)
+        l = l.encode("latin-1", "ignore").decode("latin-1")
+        l = l.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return l.replace(" ", "&nbsp;")
+    return Paragraph("<br/>".join(prep(l) for l in lines), S["mono"])
+
+
 def table(data, col_widths, header=True):
     rows = []
     for r, row in enumerate(data):
@@ -262,38 +273,186 @@ def section_4():
         ["Presence PIR", "aucune", "mouvement detecte", "-"],
         ["Camera", "0 personne", "1 personne", "2 personnes et +"],
     ]
+    glossaire = [
+        ["Terme", "Definition"],
+        ["Anomalie", "Lecture qui s'ecarte nettement du comportement habituel appris."],
+        ["Apprentissage non supervise",
+         "Le modele apprend la normalite SANS etiquettes ; tout ecart = suspect."],
+        ["Apprentissage supervise",
+         "Le modele apprend sur des exemples ETIQUETES (normal / anomalie)."],
+        ["Isolation Forest",
+         "Foret d'arbres aleatoires : une anomalie s'isole en peu de coupes."],
+        ["LOF (Local Outlier Factor)",
+         "Compare la densite d'un point a celle de ses voisins ; isole = anormal."],
+        ["ECOD (PyOD)",
+         "Methode non parametrique : score base sur la distribution (queues)."],
+        ["Gradient Boosting",
+         "Classifieur supervise : additionne des arbres correcteurs successifs."],
+        ["Ensemble",
+         "Combinaison de plusieurs modeles pour un verdict plus fiable qu'un seul."],
+        ["StandardScaler",
+         "Met chaque mesure a la meme echelle (moyenne 0, ecart-type 1)."],
+        ["Feature engineering",
+         "Construction de variables (moyennes, ecarts, tendances) a partir du brut."],
+        ["Fenetre glissante",
+         "Les N dernieres lectures, qui donnent le contexte temporel."],
+        ["z-score",
+         "Nombre d'ecarts-types entre une valeur et la moyenne de reference."],
+        ["Seuil (threshold)",
+         "Valeur (0.5) au-dela de laquelle le score declenche une anomalie."],
+        ["Faux positif",
+         "Alerte declenchee alors qu'il n'y a pas de danger reel."],
+        ["Derive / drift",
+         "Capteur fige ou qui glisse : mesure devenue peu fiable."],
+        ["Fusion multi-capteurs",
+         "Croiser plusieurs capteurs pour confirmer un meme evenement."],
+        ["Humidex",
+         "Temperature RESSENTIE combinant chaleur et humidite."],
+        ["Profil d'environnement",
+         "Seuils propres a un lieu (calibration), ex. boulangerie."],
+    ]
+    faq = [
+        ("Pourquoi combiner quatre modeles plutot qu'un seul ?",
+         "Chaque modele voit une facette : Isolation Forest et LOF reperent les points "
+         "rares, ECOD exploite la distribution, Gradient Boosting apprend des exemples "
+         "etiquetes. En les combinant (vote), on reduit les angles morts et les faux "
+         "positifs : il faut que plusieurs modeles soient d'accord."),
+        ("Comment le score final est-il calcule ?",
+         "Les scores non supervises sont normalises puis moyennes : non_sup = (f+l+e)/3. "
+         "Le modele supervise donne une probabilite sup. Le score final est "
+         "score = 0.5 x sup + 0.5 x non_sup. Si score >= 0.5, la lecture est une anomalie."),
+        ("Quelle difference entre l'ensemble ML et la fusion multi-capteurs ?",
+         "L'ensemble ML detecte qu'une situation est STATISTIQUEMENT anormale (sans savoir "
+         "pourquoi). La fusion (correlation.py) explique PHYSIQUEMENT ce qui se passe "
+         "(incendie, fuite, presence...) et fixe la gravite. Les deux sont complementaires."),
+        ("Comment distinguez-vous un incendie d'une simple fuite de gaz ?",
+         "Par corroboration : un incendie combine gaz eleve ET temperature qui monte ET "
+         "humidite qui chute (combustion). Un gaz eleve SANS chaleur = fuite de gaz. Un "
+         "seul capteur ne suffit jamais a declencher le niveau le plus grave."),
+        ("Comment reduisez-vous les faux positifs ?",
+         "Trois leviers : le vote d'ensemble (accord de plusieurs modeles), la fusion qui "
+         "exige des capteurs coherents, et la calibration par environnement (seuils "
+         "adaptes au lieu). Un agregateur coalesce aussi les alertes repetees."),
+        ("Que sont les 27 features du detecteur classique ?",
+         "Des variables derivees des mesures brutes sur une fenetre glissante : moyennes, "
+         "ecarts-types, min/max, tendances (pente), ecarts a la baseline... Elles donnent "
+         "au modele le CONTEXTE temporel, pas seulement l'instant present."),
+        ("Que fait l'assistant Mistral et comment connait-il la situation ?",
+         "C'est un modele de langage local (via Ollama). A chaque question, on lui injecte "
+         "l'etat live (mesures, niveau, derniere alerte, personnes vues). Il repond donc "
+         "sur la situation REELLE et peut expliquer le projet. Il est prechauffe au demarrage."),
+        ("Comment adapter l'IA a un nouvel environnement (ex. boulangerie) ?",
+         "Via l'assistant de calibration (section 8) : 2 min d'observation, puis on fixe "
+         "les seuils (temperature plus haute, nombre de personnes normal, presence non "
+         "dangereuse). Le moteur de correlation et la vision utilisent aussitot ce profil."),
+        ("Que se passe-t-il si un capteur se fige (drift) ?",
+         "Le detecteur reconnait une valeur identique prolongee et marque la mesure comme "
+         "peu fiable (avertissement), plutot que de la croire aveuglement."),
+        ("Les donnees d'entrainement sont-elles reelles ?",
+         "L'entrainement se fait sur un jeu synthetique realiste (valeurs atmospheriques "
+         "normales + anomalies injectees). La base live (sentinel.db) reste reservee aux "
+         "vraies mesures ; on ne melange pas les deux."),
+    ]
+    faq_blocs = []
+    for q, r in faq:
+        faq_blocs += [P(q, "faqq"), P(r)]
     return [
         P("4. Intelligence artificielle predictive", "h1"),
-        P("Deux approches complementaires : un scoring d'anomalies par apprentissage "
-          "automatique, et une fusion multi-capteurs fondee sur la physique."),
-        P("Ensemble de modeles (detection d'anomalies)", "h2"),
-        P("L'ensemble (Brique 6.3) combine quatre modeles sur les signaux cles "
-          "(temperature, humidite, gaz, presence) :"),
-        *bullets([
-            "<b>Isolation Forest</b> (100 arbres) : aberrances generales, non supervise.",
-            "<b>Local Outlier Factor (LOF)</b> : points isoles par rapport au voisinage.",
-            "<b>PyOD ECOD</b> : detection non parametrique basee sur la distribution.",
-            "<b>Gradient Boosting</b> : classifieur supervise (vue dirigee).",
+        P("Le coeur intelligent de SENTINEL-X repose sur TROIS briques complementaires : "
+          "(A) un scoring d'anomalies par apprentissage automatique, (B) une fusion "
+          "multi-capteurs fondee sur la physique qui explique et qualifie le danger, et "
+          "(C) un assistant conversationnel (Mistral) connecte a l'etat reel du systeme."),
+
+        P("4.1 Schema du pipeline de decision", "h2"),
+        P("De la mesure brute jusqu'a l'affichage (app, OLED, LEDs) :"),
+        schema([
+            "  ESP32 capteurs  --MQTT-->  ingestion  -->  SQLite (sentinel.db)",
+            "                                                    |",
+            "                                 nouvelle lecture (~1 s)",
+            "                                                    v",
+            "                              TAMPON glissant (120 dernieres lectures)",
+            "                                                    |",
+            "              +-------------------------------------+------------------+",
+            "              |                                                         |",
+            "              v                                                         v",
+            "  [A] SCORING D'ANOMALIE (ML)                      [B] FUSION MULTI-CAPTEURS",
+            "      StandardScaler (mise a l'echelle)                correlation.py (physique)",
+            "      +------------------------------+                 croise temp / humidite /",
+            "      | Isolation Forest        (f)  |                 gaz / PIR / camera, avec",
+            "      | LOF                      (l)  |                 le PROFIL calibre du lieu",
+            "      | ECOD                     (e)  |                           |",
+            "      | Gradient Boosting      (sup)  |                           v",
+            "      +------------------------------+                 SCENARIO identifie :",
+            "              |                                         INCENDIE, FUITE_GAZ,",
+            "              v                                         SURCHAUFFE, FOULE,",
+            "   non_sup = (f + l + e) / 3                           PRESENCE, CHALEUR,",
+            "   score   = 0.5*sup + 0.5*non_sup                     CONDENSATION, NORMAL",
+            "   anomalie si score >= 0.5                                      |",
+            "              |                                                   |",
+            "              +-------------------------+-------------------------+",
+            "                                        v",
+            "                     GENERATION D'ALERTE (la gravite vient du scenario)",
+            "                                        |",
+            "                                        v",
+            "            API /api/v1/alerts  -->  ETAT CONSOLIDE  (vert / jaune / rouge)",
+            "                                        |",
+            "              +-------------------------+-------------------------+",
+            "              v                                                   v",
+            "   App cockpit + chat IA                          ESP32 : OLED + LEDs (via MQTT)",
         ]),
-        P("Les scores sont fusionnes ; au-dela du seuil (0.5), la lecture est jugee "
-          "anormale. Le detecteur classique (IF + LOF) utilise en complement 27 features "
-          "d'ingenierie (moyennes, ecarts, tendances...) calculees sur une fenetre "
-          "glissante."),
-        P("Fusion multi-capteurs scientifique (correlation.py)", "h2"),
-        P("Plutot que des seuils isoles, le moteur croise temperature, humidite, gaz, "
-          "PIR et camera pour identifier un SCENARIO reel. Une alerte grave exige "
-          "plusieurs capteurs coherents, ce qui reduit fortement les faux positifs."),
+
+        P("4.2 Etape A - Scoring d'anomalie (ensemble de modeles)", "h2"),
+        P("L'ensemble (Brique 6.3) travaille sur les quatre signaux cles (temperature, "
+          "humidite, gaz, presence), remis a la meme echelle par un StandardScaler. "
+          "Quatre modeles votent :"),
+        *bullets([
+            "<b>Isolation Forest</b> (100 arbres, contamination 0.1) : isole les lectures "
+            "rares en peu de coupes aleatoires. Non supervise.",
+            "<b>LOF - Local Outlier Factor</b> (20 voisins) : compare la densite locale "
+            "d'un point a celle de ses voisins. Non supervise.",
+            "<b>ECOD (PyOD)</b> : score non parametrique fonde sur la distribution "
+            "(fonctions de repartition). Non supervise.",
+            "<b>Gradient Boosting</b> : classifieur supervise, entraine sur des exemples "
+            "etiquetes normal / anomalie ; fournit une probabilite.",
+        ]),
+        P("Les trois scores non supervises (f, l, e) sont normalises puis moyennes ; le "
+          "supervise (sup) est une probabilite. Verdict final (poids egaux 0,5 / 0,5) :"),
+        mono([
+            "non_sup = (f + l + e) / 3",
+            "score   = 0.5 * sup + 0.5 * non_sup",
+            "is_anomaly = (score >= 0.5)        # seuil = 0.5",
+        ]),
+        P("En complement, un detecteur classique (Isolation Forest + LOF) exploite 27 "
+          "features d'ingenierie calculees sur la fenetre glissante (moyennes, ecarts-types, "
+          "tendances, ecarts a la baseline) et fournit l'explicabilite (les 3 features les "
+          "plus anormales) ainsi que la detection de derive (capteur fige)."),
+
+        P("4.3 Etape B - Fusion multi-capteurs (correlation.py)", "h2"),
+        P("Le scoring dit QU'IL se passe quelque chose d'anormal ; la fusion dit QUOI. "
+          "Plutot que des seuils isoles, le moteur croise temperature, humidite, gaz, PIR "
+          "et camera (avec le profil calibre) pour identifier un SCENARIO concret. Une "
+          "alerte grave exige plusieurs capteurs coherents -> beaucoup moins de faux "
+          "positifs. Les scenarios, du plus grave au plus benin :"),
         table(scenarios, [3.1 * cm, 9.4 * cm, 3.0 * cm]),
         Spacer(1, 6),
         P("Seuils par defaut (personnalisables par la calibration, section 8)", "h2"),
         table(seuils, [4.0 * cm, 3.5 * cm, 4.5 * cm, 3.5 * cm]),
         Spacer(1, 6),
-        P("Assistant Ollama Mistral", "h2"),
-        P("Un assistant conversationnel (modele Mistral via Ollama, local) est integre "
-          "au cockpit. Il recoit en contexte l'etat live du systeme (mesures actuelles, "
-          "niveau, derniere alerte, presence camera), ce qui lui permet de repondre sur "
-          "la situation reelle et d'expliquer le projet. Le modele est prechauffe au "
-          "demarrage pour une premiere reponse rapide."),
+
+        P("4.4 Etape C - Assistant Ollama Mistral", "h2"),
+        P("Un assistant conversationnel (modele Mistral via Ollama, execute EN LOCAL, sans "
+          "cloud) est integre au cockpit. A chaque question, on lui transmet en contexte "
+          "l'etat live (mesures actuelles, niveau vert/jaune/rouge, derniere alerte, "
+          "personnes vues par la camera) : il repond donc sur la situation REELLE et "
+          "explique le projet. Le modele est prechauffe au demarrage pour une premiere "
+          "reponse rapide."),
+
+        P("4.5 Definitions (glossaire de la partie IA)", "h2"),
+        table(glossaire, [4.6 * cm, 10.9 * cm]),
+        Spacer(1, 6),
+
+        P("4.6 Questions possibles sur l'IA", "h2"),
+        *faq_blocs,
     ]
 
 
