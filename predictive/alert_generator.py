@@ -11,8 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-# Mêmes seuils que le moteur de corrélation (source de vérité unique).
-from predictive.correlation import GAZ_JAUNE, GAZ_ROUGE, TEMP_JAUNE, TEMP_ROUGE
+from predictive import profil
 
 SOURCE = "ia_predictive"
 TYPE = "anomaly_detected"
@@ -21,31 +20,32 @@ TYPE = "anomaly_detected"
 def _contexte(valeurs: dict, drift: str | None) -> tuple[str, str, str]:
     """Explication + recommandation + GRAVITÉ selon le TYPE de danger (règles métier).
 
-    La gravité dépend de ce qui se passe réellement (seuils décidés : température
-    et gaz en vert / jaune / rouge), pas du score brut. Sert de repli quand la
-    corrélation ne qualifie pas de scénario précis.
+    La gravité suit les seuils du profil d'environnement (vert / jaune / rouge),
+    pas le score brut. Sert de repli quand la corrélation ne qualifie pas de
+    scénario précis.
     """
     if drift:
         return (f"Capteur « {drift} » figé (même valeur prolongée) — mesure peu fiable",
                 f"Vérifier le câblage / l'alimentation du capteur {drift}", "WARNING")
 
+    seuils = profil.charger_seuils()
     gaz = float(valeurs.get("gas", 0) or 0)
     temp = float(valeurs.get("temp", 0) or 0)
     presence = valeurs.get("presence", 0)
 
-    if gaz >= GAZ_ROUGE:
+    if gaz >= seuils.gaz_rouge:
         return ("Gaz élevé détecté → fuite / fumée possible",
                 "Vérifier la zone et ventiler ; couper la source de gaz si confirmé", "CRITICAL")
-    if temp > TEMP_ROUGE:
+    if temp > seuils.temp_rouge:
         return ("Température critique → surchauffe / risque feu",
                 "Vérifier la source de chaleur, couper les équipements chauffants", "CRITICAL")
-    if gaz >= GAZ_JAUNE:
+    if gaz >= seuils.gaz_jaune:
         return ("Gaz léger détecté → à surveiller",
                 "Aérer la zone et surveiller l'évolution", "WARNING")
-    if presence:
+    if presence and seuils.presence_danger:
         return ("Présence détectée",
                 "Vérifier si la présence est attendue", "WARNING")
-    if temp > TEMP_JAUNE:
+    if temp > seuils.temp_jaune:
         return ("Température élevée → ambiance chaude",
                 "Ventiler ou rafraîchir la zone", "WARNING")
     # Cas générique : l'IA note un écart mais pas de danger identifié -> INFO.

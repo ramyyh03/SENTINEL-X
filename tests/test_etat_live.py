@@ -29,8 +29,14 @@ class _Magasin:
         self.db_path = db_path
 
 
+def _sans_profil(tmp_path, monkeypatch):
+    """Force les seuils par défaut (aucun profil enregistré)."""
+    monkeypatch.setattr("predictive.profil.PROFIL_PATH", tmp_path / "noprofile.json")
+
+
 def _etat(tmp_path, monkeypatch, **mesure):
-    # Pas de caméra par défaut (fichier inexistant -> None).
+    # Pas de caméra ni de profil par défaut (fichiers inexistants).
+    _sans_profil(tmp_path, monkeypatch)
     monkeypatch.setattr(server, "VISION_STATUS", tmp_path / "pas_de_cam.json")
     db = _db_avec_mesure(tmp_path, **mesure)
     return server._etat_consolide(_Magasin(db))
@@ -68,6 +74,7 @@ def test_pir_presence_jaune(tmp_path, monkeypatch):
 
 def test_camera_live_prend_le_dessus(tmp_path, monkeypatch):
     # 2 personnes à la caméra => rouge, même avec des capteurs au calme.
+    _sans_profil(tmp_path, monkeypatch)
     vs = tmp_path / "vision_status.json"
     vs.write_text('{"persons": 2}', encoding="utf-8")
     monkeypatch.setattr(server, "VISION_STATUS", vs)
@@ -78,6 +85,7 @@ def test_camera_live_prend_le_dessus(tmp_path, monkeypatch):
 
 def test_mesure_perimee_ignoree(tmp_path, monkeypatch):
     # Une mesure trop vieille ne doit pas colorer l'état (ESP32 déconnecté).
+    _sans_profil(tmp_path, monkeypatch)
     monkeypatch.setattr(server, "VISION_STATUS", tmp_path / "pas_de_cam.json")
     db = tmp_path / "sentinel.db"
     with sqlite3.connect(db) as conn:

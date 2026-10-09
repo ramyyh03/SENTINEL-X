@@ -3,7 +3,14 @@
 Seuils décidés : température jaune > 28°C / rouge > 32°C ·
 gaz jaune ≥ 100 / rouge ≥ 300 · présence (PIR ou caméra) = jaune.
 """
-from predictive.correlation import analyser, humidex
+from predictive.correlation import analyser as _analyser, humidex
+from predictive.profil import Seuils
+
+_SEUILS = Seuils()  # seuils par défaut, explicites -> tests déterministes
+
+
+def analyser(valeurs, tendances=None, cam_personnes=0, seuils=None):
+    return _analyser(valeurs, tendances or {}, cam_personnes, seuils or _SEUILS)
 
 
 def _v(temp=22, hum=50, gas=0, presence=0):
@@ -72,3 +79,31 @@ def test_normal_quand_tout_va_bien():
 
 def test_humidex_augmente_avec_humidite():
     assert humidex(30, 80) > humidex(30, 30)
+
+
+# ---- PROFIL PERSONNALISÉ (ex. boulangerie) -------------------------------- #
+_BOULANGERIE = Seuils(temp_jaune=35, temp_rouge=45, gaz_jaune=150, gaz_rouge=400,
+                      cam_ok=2, presence_danger=False, nom="Boulangerie")
+
+
+def test_boulangerie_deux_personnes_reste_normal():
+    # 2 personnes = OK dans ce profil -> pas d'alerte caméra.
+    s = analyser(_v(), cam_personnes=2, seuils=_BOULANGERIE)
+    assert s.nom == "NORMAL"
+
+
+def test_boulangerie_troisieme_personne_est_warning():
+    s = analyser(_v(), cam_personnes=3, seuils=_BOULANGERIE)
+    assert s.nom == "PRESENCE" and s.severite == "WARNING"
+
+
+def test_boulangerie_chaleur_toleree():
+    # 33°C ne déclenche rien si le seuil jaune est à 35.
+    s = analyser(_v(temp=33), seuils=_BOULANGERIE)
+    assert s.nom == "NORMAL"
+
+
+def test_presence_non_dangereuse_reste_normal():
+    # presence_danger=False -> le PIR seul ne colore pas.
+    s = analyser(_v(presence=1), seuils=_BOULANGERIE)
+    assert s.nom == "NORMAL"

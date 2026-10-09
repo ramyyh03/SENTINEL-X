@@ -42,3 +42,4 @@ pyod>=1.1.0
 
 # --- Application de bureau (fenêtre native : cockpit + pages web) ---
 pywebview>=5.0
+reportlab>=4.0

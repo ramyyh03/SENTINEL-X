@@ -92,3 +92,6 @@ data/synthetic_1000.csv
 # --- Red team / pentest croise (LOCAL uniquement, jamais distribue) ---
 REDTEAM-PLAYBOOK.md
 scripts/redteam_mqtt.py
+
+# Profil d environnement calibre (specifique a chaque machine)
+data/profil_env.json

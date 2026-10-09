@@ -275,6 +275,46 @@ def create_app(store: AlertStore | None = None) -> Flask:
         logger.info("Alerte SIMULÉE injectée : %s", type_anom)
         return jsonify({"status": "injected", "type": type_anom}), 201
 
+    # --- Assistant de calibration : observe l'environnement puis fixe les seuils ---
+    @app.get("/calibration")
+    @auth.login_required
+    def calibration():
+        return _page_calibration()
+
+    @app.get("/api/v1/calibration/live")
+    @auth.login_required
+    def calibration_live():
+        return jsonify(_snapshot_live(magasin.db_path))
+
+    @app.get("/api/v1/calibration/current")
+    @auth.login_required
+    def calibration_current():
+        from predictive import profil
+        from dataclasses import asdict
+        return jsonify(asdict(profil.charger_seuils()))
+
+    @app.post("/api/v1/calibration/suggest")
+    @auth.login_required
+    def calibration_suggest():
+        from predictive import profil
+        try:
+            return jsonify(profil.suggerer(request.get_json(silent=True) or {}))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.post("/api/v1/calibration/save")
+    @auth.login_required
+    def calibration_save():
+        from predictive import profil
+        from dataclasses import asdict
+        try:
+            seuils = profil.enregistrer_seuils(request.get_json(silent=True) or {})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        logger.info("Profil d'environnement enregistré : %s", seuils.nom)
+        return jsonify({"status": "saved", "seuils": asdict(seuils),
+                        "resume": seuils.resume()}), 201
+
     @app.after_request
     def _pas_de_cache(resp):
         """Empêche le cache des pages HTML : on voit toujours la dernière interface."""
@@ -416,26 +456,17 @@ VISION_STATUS = PROJECT_ROOT / "data" / "vision_status.json"
 CAM_FRAIS_S = 5                 # statut caméra valable 5 s
 
 
-def _niveau_camera() -> tuple[str, str] | None:
-    """État LIVE caméra : 2+ personnes = rouge, 1 = orange, sinon None (pas d'override)."""
+def _cam_personnes() -> int:
+    """Nombre de personnes vues par la caméra EN DIRECT (0 si statut absent/périmé)."""
     import json
     try:
-        if not VISION_STATUS.exists():
-            return None
-        if time.time() - VISION_STATUS.stat().st_mtime > CAM_FRAIS_S:
-            return None
-        n = int(json.loads(VISION_STATUS.read_text(encoding="utf-8")).get("persons", 0))
+        if not VISION_STATUS.exists() or time.time() - VISION_STATUS.stat().st_mtime > CAM_FRAIS_S:
+            return 0
+        return int(json.loads(VISION_STATUS.read_text(encoding="utf-8")).get("persons", 0))
     except (OSError, ValueError, TypeError):
-        return None
-    if n >= 2:
-        return "rouge", f"{n} personnes détectées 🎥"
-    if n == 1:
-        return "orange", "1 personne détectée 🎥"
-    return None
+        return 0
 
 
-_ORDRE_NIVEAU = {"vert": 0, "orange": 1, "rouge": 2}
-_NIVEAU_SEVERITE = {"vert": "INFO", "orange": "WARNING", "rouge": "CRITICAL"}
 _SEVERITE_NIVEAU = {"INFO": "vert", "WARNING": "orange", "CRITICAL": "rouge"}
 _LABEL_NIVEAU = {"vert": "Normal", "orange": "Avertissement", "rouge": "Alerte critique"}
 
@@ -444,29 +475,26 @@ def _etat_consolide(magasin) -> dict:
     """État UNIQUE (vert/orange/rouge) partagé par l'app, l'OLED et les LEDs.
 
     Vérité unique : le moteur de corrélation (predictive/correlation.py) appliqué
-    aux mesures LIVE (température, gaz, PIR) + la caméra en direct. La source la
-    plus grave l'emporte. Comme c'est basé sur les valeurs ACTUELLES, un état qui
-    dure (ex. chaleur) reste coloré en continu — pas de clignotement.
+    aux mesures LIVE (température, gaz, PIR) + la caméra en direct, avec les seuils
+    du profil d'environnement calibré. Comme c'est basé sur les valeurs ACTUELLES,
+    un état qui dure (ex. chaleur) reste coloré en continu — pas de clignotement.
+    Si l'ESP32 est déconnecté (mesures périmées), on neutralise les capteurs mais
+    la caméra continue de colorer l'état.
     """
     from predictive.correlation import analyser
-    niveau, severity, contexte = "vert", "INFO", ""
     age = _age_derniere_mesure(magasin.db_path)
     recents = _lire_capteurs(magasin.db_path, 1)
     if recents and age is not None and age <= ESP32_FRAIS_S:
         d = recents[0]
         valeurs = {"temp": d.get("temp"), "humidity": d.get("humidity"),
                    "gas": d.get("gas"), "presence": d.get("presence")}
-        sc = analyser(valeurs, {}, cam_personnes=0)   # capteurs seuls (caméra gérée à part)
-        severity = sc.severite
-        niveau = _SEVERITE_NIVEAU[severity]
-        contexte = sc.contexte if niveau != "vert" else ""
-    # Caméra LIVE (comportement validé : 1 = orange, 2+ = rouge) : prime si plus grave.
-    cam = _niveau_camera()
-    if cam and _ORDRE_NIVEAU[cam[0]] > _ORDRE_NIVEAU[niveau]:
-        niveau, contexte = cam[0], cam[1]
-        severity = _NIVEAU_SEVERITE[niveau]
+    else:
+        valeurs = {"temp": 22, "humidity": 50, "gas": 0, "presence": 0}  # capteurs neutres
+    sc = analyser(valeurs, {}, cam_personnes=_cam_personnes())
+    niveau = _SEVERITE_NIVEAU[sc.severite]
+    contexte = sc.contexte if niveau != "vert" else ""
     return {"niveau": niveau, "label": _LABEL_NIVEAU[niveau],
-            "severity": severity, "context": contexte}
+            "severity": sc.severite, "context": contexte}
 
 
 def _contexte_ia(magasin) -> dict:
@@ -490,6 +518,16 @@ def _contexte_ia(magasin) -> dict:
                    f"[{details.get('severity', '?')}] — {details.get('context', '')}.")
     return {"resume": resume, "sensors": d, "alerts_count": magasin.count(),
             "latest_alert": latest, "niveau": niveau, "niveau_label": niveau_label,
+            "maj": datetime.now(timezone.utc).strftime("%H:%M:%S")}
+
+
+def _snapshot_live(db_path) -> dict:
+    """Instantané des mesures live (pour l'observation de calibration)."""
+    recents = _lire_capteurs(db_path, 1)
+    d = recents[0] if recents else {}
+    return {"temp": d.get("temp"), "humidity": d.get("humidity"),
+            "gas": d.get("gas"), "presence": int(d.get("presence") or 0),
+            "persons": _cam_personnes(),
             "maj": datetime.now(timezone.utc).strftime("%H:%M:%S")}
 
 
@@ -574,6 +612,7 @@ def _page_cockpit() -> str:
           <button class="on" data-url="/dashboard">🚨 Alertes</button>
           <button data-url="/live">📊 Capteurs</button>
           <button data-url="/camera">🎥 Caméra</button>
+          <button data-url="/calibration">🎚️ Calibration</button>
           <button data-url="/security">🛡️ Sécurité</button>
         </div>
         <iframe id="vue" src="/dashboard"></iframe>
@@ -684,6 +723,193 @@ def _appliquer_correctifs_securite() -> dict:
     return {"ok": True, "actions": actions, "manuel": manuel,
             "message": (f"{len(actions)} correctif(s) appliqué(s) automatiquement."
                         if actions else "Rien à corriger automatiquement.")}
+
+
+CALIBRATION_SECONDES = 120      # durée d'observation de l'environnement (2 min)
+
+
+def _page_calibration() -> str:
+    """Assistant de calibration : observe 2 min puis questionnaire des seuils."""
+    return """<!doctype html>
+<html lang="fr"><head>
+<meta charset="utf-8">
+<title>SENTINEL-X — Calibration</title>
+<style>
+  body { font-family: system-ui, sans-serif; background:#1b1f23; color:#e6e6e6; margin:0; padding:24px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  h2 { font-size:15px; color:#adbac7; margin:18px 0 8px; }
+  .sub { color:#8b949e; font-size:13px; margin-bottom:16px; }
+  .card { background:#24292e; border:1px solid #30363d; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .big { font-size:42px; font-weight:800; letter-spacing:1px; }
+  .live { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:12px; margin-top:12px; }
+  .live div { background:#2d333b; border-radius:8px; padding:10px; text-align:center; }
+  .live .v { font-size:22px; font-weight:700; }
+  .live .l { font-size:11px; color:#8b949e; text-transform:uppercase; letter-spacing:.5px; }
+  label { display:block; font-size:13px; margin:10px 0 4px; color:#adbac7; }
+  input, select { width:100%; box-sizing:border-box; background:#1b1f23; color:#e6e6e6;
+                  border:1px solid #30363d; border-radius:6px; padding:8px; font-size:14px; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  button { background:#238636; color:#fff; border:0; border-radius:6px; padding:10px 16px;
+           cursor:pointer; font-size:14px; font-weight:600; }
+  button.sec { background:#2d333b; border:1px solid #30363d; }
+  .hint { color:#8b949e; font-size:12px; margin-top:4px; }
+  .ok { color:#2ecc71; font-weight:700; }
+  .err { color:#e74c3c; font-weight:700; }
+  a { color:#58a6ff; text-decoration:none; }
+  .hide { display:none; }
+</style></head>
+<body>
+  <h1>🎚️ Assistant de calibration</h1>
+  <div class="sub">Apprend les « normes » de VOTRE environnement, puis vous laissez fixer les seuils.
+    <a href="/dashboard">→ alertes</a></div>
+
+  <div id="profil" class="card">Profil actuel : <span id="profilNom">…</span></div>
+
+  <!-- ÉTAPE 1 : intro -->
+  <div id="etape1" class="card">
+    <h2>Étape 1 — Observer l'environnement (2 min)</h2>
+    <p class="hint">Laissez le système tourner 2 minutes en conditions NORMALES
+      (activité habituelle du lieu). Il mesure la température, le gaz au repos et
+      le nombre de personnes habituel pour vous proposer des seuils adaptés.</p>
+    <button onclick="demarrer()">▶ Démarrer l'observation</button>
+  </div>
+
+  <!-- ÉTAPE 2 : observation live -->
+  <div id="etape2" class="card hide">
+    <h2>Observation en cours…</h2>
+    <div class="big"><span id="chrono">02:00</span></div>
+    <div class="live">
+      <div><div class="v" id="vTemp">—</div><div class="l">Température °C</div></div>
+      <div><div class="v" id="vHum">—</div><div class="l">Humidité %</div></div>
+      <div><div class="v" id="vGas">—</div><div class="l">Gaz</div></div>
+      <div><div class="v" id="vPir">—</div><div class="l">PIR</div></div>
+      <div><div class="v" id="vCam">—</div><div class="l">Personnes (caméra)</div></div>
+    </div>
+    <p class="hint" id="obsMax"></p>
+    <button class="sec" onclick="terminer()">Terminer maintenant →</button>
+  </div>
+
+  <!-- ÉTAPE 3 : questionnaire -->
+  <div id="etape3" class="card hide">
+    <h2>Étape 2 — Vous fixez les seuils</h2>
+    <p class="hint">Valeurs proposées d'après l'observation. Ajustez-les à votre convenance
+      (ex. boulangerie : montez la température ; si 2 personnes = normal, mettez « 2 »).</p>
+    <label>Nom de l'environnement</label>
+    <input id="nom" placeholder="Ex : Boulangerie, Entrepôt, Bureau…">
+    <h2>🌡️ Température</h2>
+    <div class="row">
+      <div><label>🟡 Jaune au-dessus de (°C)</label><input id="temp_jaune" type="number" step="0.5"></div>
+      <div><label>🔴 Rouge au-dessus de (°C)</label><input id="temp_rouge" type="number" step="0.5"></div>
+    </div>
+    <h2>💨 Gaz (0 = air propre)</h2>
+    <div class="row">
+      <div><label>🟡 Jaune à partir de</label><input id="gaz_jaune" type="number"></div>
+      <div><label>🔴 Rouge à partir de</label><input id="gaz_rouge" type="number"></div>
+    </div>
+    <h2>🎥 Caméra & présence</h2>
+    <label>Nombre de personnes considéré NORMAL (vert)</label>
+    <input id="cam_ok" type="number" min="0">
+    <div class="hint">Au-dessus, c'est une alerte. Ex : boulangerie = 2 (jusqu'à 2 clients = OK).</div>
+    <label>La présence (détecteur PIR) est-elle un danger ?</label>
+    <select id="presence_danger">
+      <option value="true">Oui — toute présence est une alerte (jaune)</option>
+      <option value="false">Non — la présence est normale (vert)</option>
+    </select>
+    <p style="margin-top:16px">
+      <button onclick="enregistrer()">💾 Enregistrer le profil</button>
+      <button class="sec" onclick="recommencer()">↻ Recommencer</button>
+    </p>
+    <p id="resultat"></p>
+  </div>
+
+<script>
+const TOTAL = 120;
+let reste = TOTAL, tChrono = null, tPoll = null;
+let stats = { temp_max: -99, gas_max: 0, personnes_max: 0, presence_vue: false };
+
+async function chargerProfil() {
+  try {
+    const s = await (await fetch('/api/v1/calibration/current')).json();
+    document.getElementById('profilNom').textContent =
+      s.nom + ' · temp ' + s.temp_jaune + '/' + s.temp_rouge + '°C · gaz ' +
+      s.gaz_jaune + '/' + s.gaz_rouge + ' · ' + s.cam_ok + ' pers. OK · présence ' +
+      (s.presence_danger ? 'danger' : 'normale');
+  } catch (e) { document.getElementById('profilNom').textContent = 'par défaut'; }
+}
+
+function fmt(n){ n=Math.max(0,n); const m=Math.floor(n/60), s=n%60; return (m<10?'0':'')+m+':'+(s<10?'0':'')+s; }
+
+function demarrer() {
+  document.getElementById('etape1').classList.add('hide');
+  document.getElementById('etape2').classList.remove('hide');
+  reste = TOTAL; stats = { temp_max:-99, gas_max:0, personnes_max:0, presence_vue:false };
+  poll(); tPoll = setInterval(poll, 1000);
+  tChrono = setInterval(() => {
+    reste--; document.getElementById('chrono').textContent = fmt(reste);
+    if (reste <= 0) terminer();
+  }, 1000);
+}
+
+async function poll() {
+  try {
+    const s = await (await fetch('/api/v1/calibration/live')).json();
+    const set = (id,v) => document.getElementById(id).textContent = (v===null||v===undefined)?'—':v;
+    set('vTemp', s.temp); set('vHum', s.humidity); set('vGas', s.gas);
+    set('vPir', s.presence ? 'présence' : 'rien'); set('vCam', s.persons);
+    if (s.temp !== null && s.temp !== undefined) stats.temp_max = Math.max(stats.temp_max, s.temp);
+    if (s.gas !== null && s.gas !== undefined) stats.gas_max = Math.max(stats.gas_max, s.gas);
+    stats.personnes_max = Math.max(stats.personnes_max, s.persons || 0);
+    if (s.presence) stats.presence_vue = true;
+    document.getElementById('obsMax').textContent =
+      'Observé : temp max ' + (stats.temp_max>-99?stats.temp_max:'—') + '°C · gaz max ' +
+      stats.gas_max + ' · ' + stats.personnes_max + ' personne(s) max';
+  } catch (e) {}
+}
+
+async function terminer() {
+  clearInterval(tChrono); clearInterval(tPoll);
+  let sug = {};
+  try { sug = await (await fetch('/api/v1/calibration/suggest', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(stats)
+  })).json(); } catch (e) {}
+  const v = (id,val) => { if (val!==undefined) document.getElementById(id).value = val; };
+  v('temp_jaune', sug.temp_jaune); v('temp_rouge', sug.temp_rouge);
+  v('gaz_jaune', sug.gaz_jaune); v('gaz_rouge', sug.gaz_rouge);
+  v('cam_ok', sug.cam_ok);
+  document.getElementById('presence_danger').value = sug.presence_danger ? 'true' : 'false';
+  document.getElementById('etape2').classList.add('hide');
+  document.getElementById('etape3').classList.remove('hide');
+}
+
+async function enregistrer() {
+  const body = {
+    nom: document.getElementById('nom').value || 'Mon environnement',
+    temp_jaune: parseFloat(document.getElementById('temp_jaune').value),
+    temp_rouge: parseFloat(document.getElementById('temp_rouge').value),
+    gaz_jaune: parseFloat(document.getElementById('gaz_jaune').value),
+    gaz_rouge: parseFloat(document.getElementById('gaz_rouge').value),
+    cam_ok: parseInt(document.getElementById('cam_ok').value, 10),
+    presence_danger: document.getElementById('presence_danger').value === 'true',
+  };
+  const r = document.getElementById('resultat');
+  try {
+    const resp = await fetch('/api/v1/calibration/save', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const data = await resp.json();
+    if (resp.ok) { r.className='ok'; r.textContent='✅ Profil enregistré — appliqué immédiatement. ' + (data.resume||''); chargerProfil(); }
+    else { r.className='err'; r.textContent='❌ ' + (data.error || 'Erreur'); }
+  } catch (e) { r.className='err'; r.textContent='❌ Échec réseau'; }
+}
+
+function recommencer() {
+  document.getElementById('etape3').classList.add('hide');
+  document.getElementById('etape1').classList.remove('hide');
+  document.getElementById('resultat').textContent = '';
+}
+
+chargerProfil();
+</script>
+</body></html>"""
 
 
 def _page_security() -> str:
